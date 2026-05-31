@@ -1,0 +1,52 @@
+{
+  "name": "outreach-api-mcp",
+  "version": "0.1.0",
+  "description": "Independent MCP server for the Outreach v2 REST API — prospects, accounts, sequences, templates, snippets, tasks, mailings, audit logs.",
+  "type": "module",
+  "main": "dist/index.js",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "package.json"
+  ],
+  "bin": {
+    "outreach-api-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit",
+    "dev": "tsx src/index.ts",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "bootstrap:oauth": "tsx --env-file=../.env scripts/bootstrap-oauth.ts",
+    "smoke:live": "tsx --env-file=../.env scripts/smoke-live.ts",
+    "prepack": "npm run build"
+  },
+  "engines": {
+    "node": ">=20.11"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.19",
+    "@typescript-eslint/eslint-plugin": "8.60.0",
+    "@typescript-eslint/parser": "8.60.0",
+    "@vitest/coverage-v8": "4.1.7",
+    "eslint": "9.39.4",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-security": "3.0.1",
+    "prettier": "3.8.3",
+    "tsx": "4.22.4",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.60.0",
+    "vitest": "4.1.7"
+  }
+}

@@ -1,0 +1,23 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /outreach-worker
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      typescript-tooling:
+        patterns:
+          - "typescript"
+          - "@typescript-eslint/*"
+          - "typescript-eslint"
+          - "eslint*"
+          - "prettier*"
+      test-tooling:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
