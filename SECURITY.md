@@ -4,7 +4,7 @@
 
 If you believe you have found a security vulnerability in `outreach-api-mcp`, please report it privately. **Do not file a public GitHub issue.**
 
-Email: `security@joefisher.io` (PGP key available on request).
+Email: `joefisherpersonal@gmail.com` (PGP key available on request).
 
 We aim to acknowledge within 72 hours and provide a remediation plan within 14 days for high-severity issues.
 
