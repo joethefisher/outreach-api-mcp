@@ -101,6 +101,17 @@ export class OAuthClient {
     return this.inflight;
   }
 
+  /**
+   * Invalidate the in-memory access token cache. The next getAccessToken()
+   * call will trigger a fresh refresh-grant exchange. Used by the API client
+   * when Outreach returns 401 mid-stream (token revoked before its TTL).
+   * Refresh token state is unaffected.
+   */
+  invalidateAccessToken(): void {
+    this.cachedAccessToken = null;
+    this.cachedAccessTokenExpiresAt = 0;
+  }
+
   private async performRefresh(): Promise<string> {
     const refreshToken = await this.resolveRefreshToken();
     const body = new URLSearchParams({

@@ -120,8 +120,11 @@ describe("parseRetryAfter", () => {
     expect(parseRetryAfter(headers({ "Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT" }))).toBe(30);
   });
 
-  it("falls back to 30 on a non-positive value", () => {
+  it("accepts 0 as 'retry immediately' (RFC 7231)", () => {
+    expect(parseRetryAfter(headers({ "Retry-After": "0" }))).toBe(0);
+  });
+
+  it("falls back to 30 on a negative value", () => {
     expect(parseRetryAfter(headers({ "Retry-After": "-5" }))).toBe(30);
-    expect(parseRetryAfter(headers({ "Retry-After": "0" }))).toBe(30);
   });
 });

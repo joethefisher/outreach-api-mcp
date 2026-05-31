@@ -57,6 +57,15 @@ export async function getAccessToken(): Promise<string> {
   }
 }
 
+/**
+ * Invalidate the in-memory access token cache so the next getAccessToken()
+ * triggers a fresh refresh exchange. Use after Outreach returns 401 on a
+ * token that should still be valid (early revoke / server-side rotation).
+ */
+export function invalidateAccessToken(): void {
+  if (cached !== null) cached.invalidateAccessToken();
+}
+
 /** Test seam — inject a pre-built client. */
 export function setOAuthClient(client: OAuthClient): void {
   cached = client;

@@ -69,6 +69,8 @@ export function parseRetryAfter(headers: Headers | null): number {
   const raw = headers.get("Retry-After") ?? headers.get("retry-after");
   if (raw === null || raw === "") return DEFAULT_RETRY_AFTER_SECONDS;
   const n = Number(raw);
-  if (Number.isFinite(n) && n > 0) return n;
+  // Per RFC 7231, Retry-After delay-seconds is a non-negative decimal integer.
+  // 0 means "retry immediately" — accept it.
+  if (Number.isFinite(n) && n >= 0) return n;
   return DEFAULT_RETRY_AFTER_SECONDS;
 }
