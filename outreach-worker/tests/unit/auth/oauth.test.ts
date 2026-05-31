@@ -49,7 +49,9 @@ function freshClient(opts: {
   return { client, cache };
 }
 
-beforeEach(() => { configureLogger("error"); });
+beforeEach(() => {
+  configureLogger("error");
+});
 afterEach(() => {
   vi.restoreAllMocks();
   configureLogger("info");
@@ -173,33 +175,33 @@ describe("OAuthClient.getAccessToken — refresh", () => {
 
 describe("OAuthClient.getAccessToken — failure paths", () => {
   it("translates a 400 invalid_grant into OAuthInvalidGrantError", async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
-      jsonResponse(400, { error: "invalid_grant" }, "Bad Request"),
-    );
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(400, { error: "invalid_grant" }, "Bad Request"));
     const { client } = freshClient({ initialRefreshToken: "rt-seed", fetchImpl });
     await expect(client.getAccessToken()).rejects.toBeInstanceOf(OAuthInvalidGrantError);
   });
 
   it("translates a 401 into OAuthInvalidGrantError", async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
-      jsonResponse(401, { error: "invalid_client" }, "Unauthorized"),
-    );
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(401, { error: "invalid_client" }, "Unauthorized"));
     const { client } = freshClient({ initialRefreshToken: "rt-seed", fetchImpl });
     await expect(client.getAccessToken()).rejects.toBeInstanceOf(OAuthInvalidGrantError);
   });
 
   it("translates a 500 into OAuthError", async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
-      jsonResponse(500, { error: "server_error" }, "Internal Server Error"),
-    );
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(500, { error: "server_error" }, "Internal Server Error"));
     const { client } = freshClient({ initialRefreshToken: "rt-seed", fetchImpl });
     await expect(client.getAccessToken()).rejects.toBeInstanceOf(OAuthError);
   });
 
   it("rejects an unexpected response shape", async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
-      jsonResponse(200, { not_a: "token_response" }),
-    );
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(200, { not_a: "token_response" }));
     const { client } = freshClient({ initialRefreshToken: "rt-seed", fetchImpl });
     await expect(client.getAccessToken()).rejects.toBeInstanceOf(OAuthError);
   });

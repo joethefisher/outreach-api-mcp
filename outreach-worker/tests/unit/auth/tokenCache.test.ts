@@ -80,11 +80,7 @@ describe("FileTokenCache.write", () => {
     // so write/read round-trip degrades to null rather than silently
     // returning a record the runtime can't use.
     await fs.mkdir(join(testDir, "nested"), { recursive: true });
-    await fs.writeFile(
-      cachePath,
-      JSON.stringify({ refreshToken: "", updatedAt: "x" }),
-      "utf8",
-    );
+    await fs.writeFile(cachePath, JSON.stringify({ refreshToken: "", updatedAt: "x" }), "utf8");
     const cache = new FileTokenCache(cachePath);
     expect(await cache.read()).toBeNull();
   });

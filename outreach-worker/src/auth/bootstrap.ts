@@ -66,7 +66,10 @@ export class CallbackError extends Error {
  *   - presence of an `error` parameter from the provider
  *   - missing `code` parameter
  */
-export function parseCallback(searchParams: URLSearchParams, expectedState: string): CallbackParseResult {
+export function parseCallback(
+  searchParams: URLSearchParams,
+  expectedState: string,
+): CallbackParseResult {
   const error = searchParams.get("error");
   if (error !== null && error !== "") {
     const desc = searchParams.get("error_description");

@@ -16,7 +16,9 @@ import {
 import { configureLogger } from "../../../src/logger.js";
 import { InMemoryTokenCache } from "../../fixtures/inMemoryTokenCache.js";
 
-beforeEach(() => { configureLogger("error"); });
+beforeEach(() => {
+  configureLogger("error");
+});
 afterEach(() => {
   vi.restoreAllMocks();
   resetOAuthClient();

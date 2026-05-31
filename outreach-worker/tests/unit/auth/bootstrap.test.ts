@@ -12,7 +12,9 @@ import {
 } from "../../../src/auth/bootstrap.js";
 import { configureLogger } from "../../../src/logger.js";
 
-beforeEach(() => { configureLogger("error"); });
+beforeEach(() => {
+  configureLogger("error");
+});
 afterEach(() => {
   vi.restoreAllMocks();
   configureLogger("info");
@@ -177,18 +179,18 @@ describe("exchangeAuthorizationCode", () => {
   });
 
   it("throws TokenExchangeError on a non-2xx response", async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
-      jsonResponse(400, { error: "invalid_grant" }, "Bad Request"),
-    );
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(400, { error: "invalid_grant" }, "Bad Request"));
     await expect(
       exchangeAuthorizationCode({ ...baseArgs, fetch: fetchImpl }),
     ).rejects.toBeInstanceOf(TokenExchangeError);
   });
 
   it("throws TokenExchangeError on an unexpected response shape", async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
-      jsonResponse(200, { not_a: "token_response" }),
-    );
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(200, { not_a: "token_response" }));
     await expect(
       exchangeAuthorizationCode({ ...baseArgs, fetch: fetchImpl }),
     ).rejects.toBeInstanceOf(TokenExchangeError);

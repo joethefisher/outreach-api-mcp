@@ -19,7 +19,6 @@ import {
   type TokenInvalidError,
 } from "../errors/envelopes.js";
 
-
 const OUTREACH_TOKEN_ENDPOINT = "https://api.outreach.io/oauth/token";
 
 export class AuthError extends Error {
