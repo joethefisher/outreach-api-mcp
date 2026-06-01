@@ -93,6 +93,7 @@ describe("Block A — prospects & accounts", () => {
           {
             id: 99,
             state: "active",
+            prospectId: 42,
             sequenceId: 5,
             sequenceName: "Onboarding",
             createdAt: "2026-05-01T00:00:00Z",
@@ -143,8 +144,8 @@ describe("Block A — prospects & accounts", () => {
     expect(result.accounts[0]?.profileUrl).toBe("https://web.outreach.io/accounts/7");
   });
 
-  it("getAccountProfile aggregates account + prospects", async () => {
-    await installToolContext({
+  it("getAccountProfile aggregates account + prospects + scopes activity to the account (COR-02)", async () => {
+    const env = await installToolContext({
       get: {
         account: {
           7: {
@@ -163,6 +164,7 @@ describe("Block A — prospects & accounts", () => {
         prospect: [
           {
             id: 1,
+            accountId: 7,
             firstName: "P1",
             lastName: "L1",
             title: "T",
@@ -171,6 +173,7 @@ describe("Block A — prospects & accounts", () => {
           },
           {
             id: 2,
+            accountId: 7,
             firstName: "P2",
             lastName: "L2",
             title: "T",
@@ -192,5 +195,18 @@ describe("Block A — prospects & accounts", () => {
     expect(result.account.id).toBe(7);
     expect(result.prospects).toHaveLength(2);
     expect(result.recentActivity.mailingsSent).toBe(5);
+
+    // COR-02: every activity count must include a `prospect` filter scoped
+    // to this account's prospects. Pre-fix, the counts went out with only a
+    // date filter (or empty for `call`) and returned workspace-wide numbers.
+    const scoped = ["mailing", "task", "call", "sequenceState"] as const;
+    for (const resource of scoped) {
+      const call = env.countCalls.find((c) => c.resource === resource);
+      expect(call, `expected a count call for ${resource}`).toBeDefined();
+      const prospectFilter = call?.filters?.["prospect"];
+      expect(prospectFilter, `${resource} count must be scoped by prospect`).toEqual({
+        __relId: [1, 2],
+      });
+    }
   });
 });

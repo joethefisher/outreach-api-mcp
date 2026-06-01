@@ -1,4 +1,9 @@
 // getUserActivity — per-user metrics over a date range.
+//
+// COR-03 (fixed): mailing counts are scoped via mailbox→user (when
+// mailboxes.read is granted) so each rep's numbers are theirs. When that
+// scope is missing, mailing counts return null and the response surfaces a
+// clear note rather than silently reporting workspace-wide numbers.
 
 import { daysAgoISO, runTool, todayISO } from "./_helpers.js";
 import { resolveUserByName } from "./_resolvers.js";
@@ -52,6 +57,46 @@ export async function getUserActivity(input: GetUserActivityInput): Promise<stri
       }
     };
 
+    // Fetch the user's mailboxes first so mailing counts can scope to them
+    // (COR-03). If mailboxes.read isn't granted, mailing counts return null.
+    let mailboxIds: readonly number[] | null = null;
+    let mailboxScopeError: string | null = null;
+    try {
+      const mailboxes = await client.list<{ id: number }>("mailbox", {
+        filters: { user: relId(userId) },
+        fields: { mailbox: ["email"] },
+        pageSize: 100,
+      });
+      mailboxIds = mailboxes.data.map((mb) => mb.id);
+    } catch {
+      mailboxScopeError = "mailboxes.read scope not granted";
+    }
+
+    const unavailableMailing = Promise.resolve({ count: -1, truncated: true });
+    const mailingFilter = (extra: Record<string, unknown>): FilterMap | null => {
+      if (mailboxIds === null) return null;
+      if (mailboxIds.length === 0) return null;
+      return {
+        mailbox: relId([...mailboxIds]),
+        createdAt: range(fromIso, toIso),
+        ...extra,
+      };
+    };
+
+    const noMailingCount = mailboxIds !== null && mailboxIds.length === 0;
+
+    const mailingCount = (
+      extra: Record<string, unknown>,
+    ): Promise<{
+      count: number;
+      truncated: boolean;
+    }> => {
+      if (noMailingCount) return Promise.resolve({ count: 0, truncated: false });
+      const filter = mailingFilter(extra);
+      if (filter === null) return unavailableMailing;
+      return safeCount("mailing", filter);
+    };
+
     const [
       prospectsOwned,
       mailingsSentByOwner,
@@ -63,9 +108,9 @@ export async function getUserActivity(input: GetUserActivityInput): Promise<stri
       tasksCompleted,
     ] = await Promise.all([
       safeCount("prospect", { owner: relId(userId) }),
-      safeCount("mailing", { createdAt: range(fromIso, toIso) }),
-      safeCount("mailing", { createdAt: range(fromIso, toIso), openedAt: "__notnull__" }),
-      safeCount("mailing", { createdAt: range(fromIso, toIso), repliedAt: "__notnull__" }),
+      mailingCount({}),
+      mailingCount({ openedAt: "__notnull__" }),
+      mailingCount({ repliedAt: "__notnull__" }),
       safeCount("call", { user: relId(userId) }),
       safeCount("call", { user: relId(userId), outcome: "connected" }),
       safeCount("task", { owner: relId(userId), createdAt: range(fromIso, toIso) }),
@@ -91,17 +136,11 @@ export async function getUserActivity(input: GetUserActivityInput): Promise<stri
 
     let activeSequencesScoped: number | null = null;
     let activeSequencesMethod: "mailbox" | "ownedProspects" | "unknown" = "unknown";
-    try {
-      const mailboxes = await client.list<{ id: number }>("mailbox", {
-        filters: { user: relId(userId) },
-        fields: { mailbox: ["email"] },
-        pageSize: 100,
-      });
-      if (mailboxes.data.length > 0) {
-        const mailboxIds = mailboxes.data.map((mb) => mb.id);
+    if (mailboxIds !== null && mailboxIds.length > 0) {
+      try {
         const states = await client.list<{ prospectId: number }>("sequenceState", {
           filters: {
-            mailbox: relId(mailboxIds),
+            mailbox: relId([...mailboxIds]),
             state: ["active", "paused", "pending"],
           },
           fields: { sequenceState: ["state"] },
@@ -109,28 +148,29 @@ export async function getUserActivity(input: GetUserActivityInput): Promise<stri
         });
         activeSequencesScoped = states.data.length;
         activeSequencesMethod = "mailbox";
-      } else {
-        activeSequencesScoped = 0;
-        activeSequencesMethod = "mailbox";
+      } catch {
+        // Fall through to ownedProspects fallback below.
       }
-    } catch {
-      if (ownedProspects.data.length > 0) {
-        try {
-          const ownedIds = ownedProspects.data.map((p) => p.id);
-          const states = await client.list<{ prospectId: number }>("sequenceState", {
-            filters: { prospect: relId(ownedIds), state: ["active", "paused", "pending"] },
-            fields: { sequenceState: ["state"] },
-            pageSize: 1000,
-          });
-          activeSequencesScoped = states.data.length;
-          activeSequencesMethod = "ownedProspects";
-        } catch {
-          activeSequencesScoped = null;
-        }
-      } else {
-        activeSequencesScoped = 0;
+    } else if (mailboxIds !== null && mailboxIds.length === 0) {
+      activeSequencesScoped = 0;
+      activeSequencesMethod = "mailbox";
+    }
+    if (activeSequencesMethod === "unknown" && ownedProspects.data.length > 0) {
+      try {
+        const ownedIds = ownedProspects.data.map((p) => p.id);
+        const states = await client.list<{ prospectId: number }>("sequenceState", {
+          filters: { prospect: relId(ownedIds), state: ["active", "paused", "pending"] },
+          fields: { sequenceState: ["state"] },
+          pageSize: 1000,
+        });
+        activeSequencesScoped = states.data.length;
         activeSequencesMethod = "ownedProspects";
+      } catch {
+        activeSequencesScoped = null;
       }
+    } else if (activeSequencesMethod === "unknown") {
+      activeSequencesScoped = 0;
+      activeSequencesMethod = "ownedProspects";
     }
 
     const accountAgg = new Map<
@@ -158,6 +198,12 @@ export async function getUserActivity(input: GetUserActivityInput): Promise<stri
       .slice(0, 10);
 
     const m = (c: { count: number }): number | null => (c.count >= 0 ? c.count : null);
+    const mailingNote =
+      mailboxScopeError !== null
+        ? "Mailing counts unavailable — mailboxes.read scope not granted, so mailings cannot be scoped to this user."
+        : mailboxIds !== null && mailboxIds.length === 0
+          ? "This user has no mailboxes configured; mailing counts are 0 by definition."
+          : undefined;
 
     return {
       user: {
@@ -184,10 +230,12 @@ export async function getUserActivity(input: GetUserActivityInput): Promise<stri
         tasksCreated: m(tasksCreated),
         tasksCompleted: m(tasksCompleted),
         callsLoggedNote: "lifetime total — Outreach v2 doesn't support filter[answeredAt] on calls",
+        ...(mailingNote !== undefined && { mailingNote }),
         unavailableMetrics: [mailingsSentByOwner, mailingsOpened, mailingsReplied].some(
           (c) => c.count === -1,
         )
-          ? "Some mailing counts unavailable — Outreach API rejected the date-range filter at this scope. Narrow the date range to retry."
+          ? (mailingNote ??
+            "Some mailing counts unavailable — Outreach API rejected the filter at this scope. Narrow the date range to retry.")
           : undefined,
       },
       topAccounts,

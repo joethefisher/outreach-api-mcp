@@ -171,25 +171,32 @@ export async function analyzeSequencePerformance(
 
     for (const m of mailings.data) {
       const state = m["state"] as string | undefined;
-      if (state === "bounced") {
-        totals.bounced++;
-      } else if (m["deliveredAt"] !== undefined && m["deliveredAt"] !== null) {
-        totals.delivered++;
-      }
-      if (m["openedAt"] !== undefined && m["openedAt"] !== null) totals.opened++;
-      if (m["clickedAt"] !== undefined && m["clickedAt"] !== null) totals.clicked++;
-      if (m["repliedAt"] !== undefined && m["repliedAt"] !== null) totals.replied++;
+      const bounced = state === "bounced";
+      const delivered = !bounced && m["deliveredAt"] !== undefined && m["deliveredAt"] !== null;
+      // COR-04: open/click/reply only count for delivered mail. A bounced-
+      // but-opened mailing pushed openRate over 1.0 in the prior version
+      // because the numerator counted any timestamped open while the
+      // denominator excluded bounces.
+      const opened = delivered && m["openedAt"] !== undefined && m["openedAt"] !== null;
+      const clicked = delivered && m["clickedAt"] !== undefined && m["clickedAt"] !== null;
+      const replied = delivered && m["repliedAt"] !== undefined && m["repliedAt"] !== null;
+
+      if (bounced) totals.bounced++;
+      else if (delivered) totals.delivered++;
+      if (opened) totals.opened++;
+      if (clicked) totals.clicked++;
+      if (replied) totals.replied++;
       if (state === "optedOut") totals.optedOut++;
 
       if (groupKeyFn !== null) {
         const key = groupKeyFn.fn(m);
         if (key !== null) {
           const g = ensureGroup(key);
-          if (state === "bounced") g.bounced++;
-          else if (m["deliveredAt"] !== undefined && m["deliveredAt"] !== null) g.delivered++;
-          if (m["openedAt"] !== undefined && m["openedAt"] !== null) g.opened++;
-          if (m["clickedAt"] !== undefined && m["clickedAt"] !== null) g.clicked++;
-          if (m["repliedAt"] !== undefined && m["repliedAt"] !== null) g.replied++;
+          if (bounced) g.bounced++;
+          else if (delivered) g.delivered++;
+          if (opened) g.opened++;
+          if (clicked) g.clicked++;
+          if (replied) g.replied++;
           if (state === "optedOut") g.optedOut++;
         }
       }

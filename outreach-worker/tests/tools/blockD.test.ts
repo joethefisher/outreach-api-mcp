@@ -72,20 +72,37 @@ describe("Block D — activity, tasks, audit", () => {
     expect(parseEnvelope(raw).error).toBe("validationError");
   });
 
-  it("getAuditLog accepts a narrow date range and returns entries", async () => {
+  it("getAuditLog filters to the date range, excluding entries outside it (COR-01)", async () => {
     await installToolContext({
       list: {
         auditLog: [
-          { id: 1, action: "create", agent: { userId: 5 }, additionalInfo: [] },
-          { id: 2, action: "update", agent: { userId: 5 }, additionalInfo: [] },
+          {
+            id: 1,
+            action: "create",
+            agent: { userId: 5 },
+            additionalInfo: [],
+            occurredAt: "2026-05-05T10:00:00Z",
+          },
+          {
+            id: 2,
+            action: "update",
+            agent: { userId: 5 },
+            additionalInfo: [],
+            occurredAt: "2026-05-10T10:00:00Z",
+          },
+          {
+            // Outside the requested 2026-05-01..2026-05-15 window — must be excluded.
+            id: 3,
+            action: "delete",
+            agent: { userId: 5 },
+            additionalInfo: [],
+            occurredAt: "2026-06-01T10:00:00Z",
+          },
         ],
       },
     });
-    const raw = await getAuditLog({
-      dateRangeFrom: "2026-05-01",
-      dateRangeTo: "2026-05-15",
-    });
+    const raw = await getAuditLog({ dateRangeFrom: "2026-05-01", dateRangeTo: "2026-05-15" });
     const result = parseSuccess(raw) as unknown as { entries: { id: number }[] };
-    expect(result.entries).toHaveLength(2);
+    expect(result.entries.map((e) => e.id)).toEqual([1, 2]);
   });
 });

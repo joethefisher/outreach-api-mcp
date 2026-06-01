@@ -52,7 +52,19 @@ export async function getAuditLog(input: GetAuditLogInput): Promise<string> {
       input.resourceType !== null && input.resourceType !== undefined && input.resourceType !== ""
         ? input.resourceType
         : null;
-    if (wantResourceId !== null || wantResourceType !== null || hasUser) {
+    // Date bounds normalized to ISO timestamps for string comparison; null
+    // on either side means "no bound on that side." Always applied so an
+    // audit query is never returned outside its documented window (COR-01).
+    const fromTs = from !== null && from !== undefined && from !== "" ? `${from}T00:00:00Z` : null;
+    const toTs = to !== null && to !== undefined && to !== "" ? `${to}T23:59:59Z` : null;
+
+    if (
+      wantResourceId !== null ||
+      wantResourceType !== null ||
+      hasUser ||
+      fromTs !== null ||
+      toTs !== null
+    ) {
       entries = entries.filter((e) => {
         const info =
           (e["additionalInfo"] as { field?: string; value?: unknown }[] | undefined) ?? [];
@@ -79,6 +91,16 @@ export async function getAuditLog(input: GetAuditLogInput): Promise<string> {
                 : "";
           if (String(candidate) !== String(input.userId)) return false;
         }
+        if (fromTs !== null || toTs !== null) {
+          // Outreach auditLog timestamps as `occurredAt` (preferred) with
+          // `createdAt` fallback. Drop entries lacking both — better to omit
+          // than to surface them as "in range" with no actual timestamp.
+          const ts =
+            (e["occurredAt"] as string | undefined) ?? (e["createdAt"] as string | undefined) ?? "";
+          if (ts === "") return false;
+          if (fromTs !== null && ts < fromTs) return false;
+          if (toTs !== null && ts > toTs) return false;
+        }
         return true;
       });
     }
@@ -94,7 +116,7 @@ export async function getAuditLog(input: GetAuditLogInput): Promise<string> {
         userId: e["userId"],
       })),
       truncated: result.nextCursor !== null,
-      note: "Outreach v2 auditLog returns action + additionalInfo (field/value pairs) + agent metadata. API filters are not supported; resource/user filters are applied client-side.",
+      note: "Outreach v2 auditLog returns action + additionalInfo (field/value pairs) + agent metadata. API filters are not supported; resource/user/date filters are applied client-side after fetching the most recent page.",
     };
   });
 }
