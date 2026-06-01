@@ -147,17 +147,29 @@ export async function getSequenceProfile(input: GetSequenceProfileInput): Promis
       }
     }
 
-    const allStates = await client.list<{ state: string; sequenceId: number }>("sequenceState", {
-      filters: { sequence: relId(id) },
-      fields: { sequenceState: ["state"] },
-      pageSize: 1000,
-    });
+    // AVL-03: enrollment summary fetch was previously unwrapped; one
+    // scopeMissing on sequenceStates would tank the whole tool. Degrade
+    // into an empty summary + an entry in unavailableSections instead.
     const summary: Record<string, number> = {};
     for (const s of SUMMARY_STATES) summary[s] = 0;
-    for (const s of allStates.data) {
-      summary[s.state] = (summary[s.state] ?? 0) + 1;
+    try {
+      const allStates = await client.list<{ state: string; sequenceId: number }>("sequenceState", {
+        filters: { sequence: relId(id) },
+        fields: { sequenceState: ["state"] },
+        pageSize: 1000,
+      });
+      for (const s of allStates.data) {
+        summary[s.state] = (summary[s.state] ?? 0) + 1;
+      }
+      summary["totalEnrolled"] = allStates.data.length;
+    } catch (e) {
+      if (isScopeMissing(e)) {
+        unavailableSections.push("enrollment summary (requires sequenceStates.read scope)");
+        summary["totalEnrolled"] = 0;
+      } else {
+        throw e;
+      }
     }
-    summary["totalEnrolled"] = allStates.data.length;
 
     return {
       sequence: {

@@ -21,10 +21,22 @@ export async function draftEmail(input: DraftEmailInput): Promise<string> {
     const includeContext = input.includeRecentContext !== false;
     const since = daysAgoISO(60);
 
-    const emptyPage = Promise.resolve({
-      data: [] as readonly Record<string, unknown>[],
+    const emptyPage: { data: readonly Record<string, unknown>[]; nextCursor: null } = {
+      data: [],
       nextCursor: null,
-    });
+    };
+    const emptyPagePromise = Promise.resolve(emptyPage);
+
+    // AVL-03: optional context fetches degrade individually instead of
+    // collapsing the whole tool. The core prospect fetch stays hard — the
+    // drafting context isn't useful without the prospect's own attributes.
+    const unavailableSections: string[] = [];
+    const optional = <T>(p: Promise<T>, label: string, fallback: T): Promise<T> =>
+      p.catch((e: unknown) => {
+        const reason = e instanceof Error ? e.message : String(e);
+        unavailableSections.push(`${label}: ${reason}`);
+        return fallback;
+      });
 
     const [prospect, mailings, calls, template] = await Promise.all([
       client.get("prospect", id, {
@@ -53,40 +65,52 @@ export async function draftEmail(input: DraftEmailInput): Promise<string> {
         },
       }),
       includeContext
-        ? client.list("mailing", {
-            filters: {
-              prospect: relId(id),
-              createdAt: range(`${since}T00:00:00Z`, new Date().toISOString()),
-            },
-            includes: ["template"],
-            fields: {
-              mailing: [
-                "subject",
-                "state",
-                "deliveredAt",
-                "openedAt",
-                "clickedAt",
-                "repliedAt",
-                "createdAt",
-              ],
-              template: ["name"],
-            },
-            flatten: { template: ["name"] },
-            pageSize: 5,
-            sort: "-createdAt",
-          })
-        : emptyPage,
+        ? optional(
+            client.list("mailing", {
+              filters: {
+                prospect: relId(id),
+                createdAt: range(`${since}T00:00:00Z`, new Date().toISOString()),
+              },
+              includes: ["template"],
+              fields: {
+                mailing: [
+                  "subject",
+                  "state",
+                  "deliveredAt",
+                  "openedAt",
+                  "clickedAt",
+                  "repliedAt",
+                  "createdAt",
+                ],
+                template: ["name"],
+              },
+              flatten: { template: ["name"] },
+              pageSize: 5,
+              sort: "-createdAt",
+            }),
+            "recentMailings",
+            emptyPage,
+          )
+        : emptyPagePromise,
       includeContext
-        ? client.list("call", {
-            filters: { prospect: relId(id) },
-            fields: { call: ["direction", "outcome", "answeredAt", "note"] },
-            pageSize: 25,
-          })
-        : emptyPage,
+        ? optional(
+            client.list("call", {
+              filters: { prospect: relId(id) },
+              fields: { call: ["direction", "outcome", "answeredAt", "note"] },
+              pageSize: 25,
+            }),
+            "recentCalls",
+            emptyPage,
+          )
+        : emptyPagePromise,
       input.templateId !== null && input.templateId !== undefined
-        ? client.get("template", input.templateId, {
-            fields: { template: ["name", "subject", "bodyHtml", "bodyText"] },
-          })
+        ? optional(
+            client.get("template", input.templateId, {
+              fields: { template: ["name", "subject", "bodyHtml", "bodyText"] },
+            }),
+            "template",
+            null,
+          )
         : Promise.resolve(null),
     ]);
 
@@ -178,6 +202,7 @@ export async function draftEmail(input: DraftEmailInput): Promise<string> {
       draftingHints,
       reminder:
         "This tool returns context only. The agent must compose the email and remind the user to copy it into Outreach.",
+      ...(unavailableSections.length > 0 && { unavailableSections }),
     };
   });
 }

@@ -66,6 +66,49 @@ describe("Block A — prospects & accounts", () => {
     expect(env.error).toBe("noResults");
   });
 
+  it("getProspectProfile degrades to unavailableSections when an optional sub-fetch fails (AVL-03)", async () => {
+    await installToolContext({
+      get: {
+        prospect: {
+          42: {
+            id: 42,
+            firstName: "Joe",
+            lastName: "Fisher",
+            title: "PM",
+            accountId: 7,
+            accountName: "Acme",
+          },
+        },
+      },
+      list: {
+        sequenceState: [
+          { id: 1, prospectId: 42, sequenceId: 5, sequenceName: "Onboarding", state: "active" },
+        ],
+        call: [],
+        task: [],
+        opportunity: [],
+      },
+      failOn: {
+        // Mailings hit scopeMissing in this scenario. The whole tool used to
+        // collapse via Promise.all; now the section degrades and the response
+        // names what's missing.
+        list: { mailing: new Error("scopeMissing: mailings.read") },
+      },
+    });
+    const raw = await getProspectProfile({ prospectId: 42 });
+    const result = parseSuccess(raw) as unknown as {
+      prospect: { id: number };
+      recentMailings: unknown[];
+      activeSequences: unknown[];
+      unavailableSections?: string[];
+    };
+    expect(result.prospect.id).toBe(42);
+    expect(result.recentMailings).toEqual([]);
+    expect(result.activeSequences).toHaveLength(1);
+    expect(result.unavailableSections).toBeDefined();
+    expect(result.unavailableSections?.some((s) => s.includes("recentMailings"))).toBe(true);
+  });
+
   it("getProspectProfile composes a 360 view from parallel fetches", async () => {
     await installToolContext({
       get: {

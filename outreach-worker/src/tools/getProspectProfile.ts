@@ -22,10 +22,23 @@ export async function getProspectProfile(input: GetProspectProfileInput): Promis
     const includeCustomFields = input.includeCustomFields !== false;
     const since = daysAgoISO(30);
 
-    const emptyPage = Promise.resolve({
-      data: [] as readonly Record<string, unknown>[],
+    const emptyPage: { data: readonly Record<string, unknown>[]; nextCursor: null } = {
+      data: [],
       nextCursor: null,
-    });
+    };
+    const emptyPagePromise = Promise.resolve(emptyPage);
+
+    // AVL-03: each optional section is wrapped so one scopeMissing / 5xx /
+    // timeout doesn't tank the whole tool. Failures accumulate into
+    // unavailableSections; the core prospect fetch stays hard (the tool has
+    // no meaningful response without it).
+    const unavailableSections: string[] = [];
+    const optional = <T>(p: Promise<T>, label: string, fallback: T): Promise<T> =>
+      p.catch((e: unknown) => {
+        const reason = e instanceof Error ? e.message : String(e);
+        unavailableSections.push(`${label}: ${reason}`);
+        return fallback;
+      });
 
     const [prospect, sequenceStates, mailings, calls, tasks, opportunities] = await Promise.all([
       client.get("prospect", id, {
@@ -67,80 +80,100 @@ export async function getProspectProfile(input: GetProspectProfileInput): Promis
           owner: ["firstName", "lastName", "email"],
         },
       }),
-      client.list("sequenceState", {
-        filters: { prospect: relId(id), state: ["active", "paused", "pending"] },
-        includes: ["sequence"],
-        fields: {
-          sequenceState: ["state", "createdAt", "stateChangedAt", "activeAt"],
-          sequence: ["name"],
-        },
-        flatten: { sequence: ["name"] },
-        pageSize: 50,
-      }),
+      optional(
+        client.list("sequenceState", {
+          filters: { prospect: relId(id), state: ["active", "paused", "pending"] },
+          includes: ["sequence"],
+          fields: {
+            sequenceState: ["state", "createdAt", "stateChangedAt", "activeAt"],
+            sequence: ["name"],
+          },
+          flatten: { sequence: ["name"] },
+          pageSize: 50,
+        }),
+        "activeSequences",
+        emptyPage,
+      ),
       includeMailings
-        ? client.list("mailing", {
-            filters: {
-              prospect: relId(id),
-              deliveredAt: range(`${since}T00:00:00Z`, new Date().toISOString()),
-            },
-            includes: ["sequence", "template"],
-            fields: {
-              mailing: [
-                "subject",
-                "state",
-                "deliveredAt",
-                "openedAt",
-                "clickedAt",
-                "repliedAt",
-                "bouncedAt",
-              ],
-              sequence: ["name"],
-              template: ["name"],
-            },
-            flatten: { sequence: ["name"], template: ["name"] },
-            pageSize: 50,
-          })
-        : emptyPage,
+        ? optional(
+            client.list("mailing", {
+              filters: {
+                prospect: relId(id),
+                deliveredAt: range(`${since}T00:00:00Z`, new Date().toISOString()),
+              },
+              includes: ["sequence", "template"],
+              fields: {
+                mailing: [
+                  "subject",
+                  "state",
+                  "deliveredAt",
+                  "openedAt",
+                  "clickedAt",
+                  "repliedAt",
+                  "bouncedAt",
+                ],
+                sequence: ["name"],
+                template: ["name"],
+              },
+              flatten: { sequence: ["name"], template: ["name"] },
+              pageSize: 50,
+            }),
+            "recentMailings",
+            emptyPage,
+          )
+        : emptyPagePromise,
       includeCalls
-        ? client.list("call", {
-            filters: { prospect: relId(id) },
-            includes: ["user"],
-            fields: {
-              call: ["direction", "outcome", "answeredAt", "completedAt", "note"],
-              user: ["firstName", "lastName"],
-            },
-            flatten: { user: ["firstName", "lastName"] },
-            pageSize: 50,
-          })
-        : emptyPage,
+        ? optional(
+            client.list("call", {
+              filters: { prospect: relId(id) },
+              includes: ["user"],
+              fields: {
+                call: ["direction", "outcome", "answeredAt", "completedAt", "note"],
+                user: ["firstName", "lastName"],
+              },
+              flatten: { user: ["firstName", "lastName"] },
+              pageSize: 50,
+            }),
+            "recentCalls",
+            emptyPage,
+          )
+        : emptyPagePromise,
       includeTasks
-        ? client.list("task", {
-            filters: { prospect: relId(id), state: "incomplete" },
-            includes: ["owner"],
-            fields: {
-              task: ["action", "state", "note", "dueAt", "createdAt"],
-              user: ["firstName", "lastName"],
-            },
-            flatten: { owner: ["firstName", "lastName"] },
-            pageSize: 50,
-          })
-        : emptyPage,
+        ? optional(
+            client.list("task", {
+              filters: { prospect: relId(id), state: "incomplete" },
+              includes: ["owner"],
+              fields: {
+                task: ["action", "state", "note", "dueAt", "createdAt"],
+                user: ["firstName", "lastName"],
+              },
+              flatten: { owner: ["firstName", "lastName"] },
+              pageSize: 50,
+            }),
+            "openTasks",
+            emptyPage,
+          )
+        : emptyPagePromise,
       includeOpportunities
-        ? client.list("opportunity", {
-            filters: { prospects: relId(id) },
-            fields: {
-              opportunity: [
-                "name",
-                "amount",
-                "closeDate",
-                "state",
-                "forecastCategory",
-                "probability",
-              ],
-            },
-            pageSize: 50,
-          })
-        : emptyPage,
+        ? optional(
+            client.list("opportunity", {
+              filters: { prospects: relId(id) },
+              fields: {
+                opportunity: [
+                  "name",
+                  "amount",
+                  "closeDate",
+                  "state",
+                  "forecastCategory",
+                  "probability",
+                ],
+              },
+              pageSize: 50,
+            }),
+            "opportunities",
+            emptyPage,
+          )
+        : emptyPagePromise,
     ]);
 
     const labelledProspect = includeCustomFields
@@ -264,6 +297,7 @@ export async function getProspectProfile(input: GetProspectProfileInput): Promis
         state: o["state"],
         probability: o["probability"],
       })),
+      ...(unavailableSections.length > 0 && { unavailableSections }),
     };
   });
 }

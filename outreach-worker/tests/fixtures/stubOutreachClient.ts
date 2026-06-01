@@ -20,6 +20,12 @@ export interface StubData {
   readonly count?: Record<string, number>;
   readonly listUsers?: readonly OutreachUser[];
   readonly fetchTypes?: unknown;
+  /** Force specific calls to reject. Used by AVL-03 degradation tests. */
+  readonly failOn?: {
+    readonly list?: Record<string, Error>;
+    readonly get?: Record<string, Error>;
+    readonly count?: Record<string, Error>;
+  };
 }
 
 export class StubOutreachClient implements OutreachClient {
@@ -34,6 +40,8 @@ export class StubOutreachClient implements OutreachClient {
     options: ListOptions = {},
   ): Promise<ListResult<T>> {
     this.listCalls.push({ resource, options });
+    const failure = this.data.failOn?.list?.[resource];
+    if (failure !== undefined) return Promise.reject(failure);
     const rows = this.data.list?.[resource] ?? [];
     const filtered =
       options.filters === undefined ? rows : rows.filter((row) => matches(row, options.filters));
@@ -46,6 +54,8 @@ export class StubOutreachClient implements OutreachClient {
     options: GetOptions = {},
   ): Promise<T> {
     this.getCalls.push({ resource, id, options });
+    const failure = this.data.failOn?.get?.[resource];
+    if (failure !== undefined) return Promise.reject(failure);
     const record = this.data.get?.[resource]?.[Number(id)];
     if (record === undefined) {
       return Promise.reject(
@@ -60,6 +70,8 @@ export class StubOutreachClient implements OutreachClient {
     filters?: FilterMap,
   ): Promise<{ readonly count: number; readonly truncated: boolean }> {
     this.countCalls.push({ resource, ...(filters !== undefined && { filters }) });
+    const failure = this.data.failOn?.count?.[resource];
+    if (failure !== undefined) return Promise.reject(failure);
     // Prefer a seeded count override; fall back to filtered-list length so a
     // test seeded only with `list` data gets a consistent count.
     const seeded = this.data.count?.[resource];
