@@ -124,3 +124,68 @@ describe("redact", () => {
     expect(redact(true)).toBe(true);
   });
 });
+
+describe("redact — value-shape scrubbing (SEC-01)", () => {
+  it("scrubs Bearer-shaped tokens inside a value at a benign key", () => {
+    const out = redact({ detail: "401 Unauthorized: Bearer abc123.token.xyz==" });
+    expect(out.detail).toBe("401 Unauthorized: [REDACTED]");
+  });
+
+  it("scrubs form-encoded oauth fields wherever they appear in a string", () => {
+    const out = redact({
+      upstreamBody: "error=invalid_grant&refresh_token=secret-rt&extra=keep",
+    });
+    expect(out.upstreamBody).toContain("[REDACTED]");
+    expect(out.upstreamBody).not.toContain("secret-rt");
+    expect(out.upstreamBody).toContain("extra=keep");
+  });
+
+  it("scrubs JWT-shaped values", () => {
+    const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.SIGNATURE-here_123";
+    const out = redact({ note: `tried token ${jwt} but it expired` });
+    expect(out.note).not.toContain("eyJhbGciOiJIUzI1NiJ9");
+    expect(out.note).toContain("[REDACTED]");
+  });
+
+  it("scrubs tokens echoed via deeply nested input (e.g. noResults envelope)", () => {
+    const out = redact({
+      errorEnvelope: {
+        error: "noResults",
+        query: { filters: { token: "Bearer leaked-via-echo" } },
+      },
+    });
+    const envelope = out.errorEnvelope as Record<string, unknown>;
+    const query = envelope["query"] as Record<string, unknown>;
+    const filters = query["filters"] as Record<string, unknown>;
+    expect(filters["token"]).toBe("[REDACTED]");
+  });
+
+  it("leaves benign strings alone (no false positives on Outreach data)", () => {
+    const out = redact({
+      stage: "Discovery",
+      sequenceState: "active",
+      note: "Following up on the demo we did Tuesday",
+    });
+    expect(out.stage).toBe("Discovery");
+    expect(out.sequenceState).toBe("active");
+    expect(out.note).toBe("Following up on the demo we did Tuesday");
+  });
+});
+
+describe("redact — circular-reference guard (SEC-06)", () => {
+  it("does not stack-overflow on a self-referencing object", () => {
+    const obj: Record<string, unknown> = { name: "loop" };
+    obj["self"] = obj;
+    const out = redact(obj);
+    expect(out["name"]).toBe("loop");
+    expect(out["self"]).toBe("[Circular]");
+  });
+
+  it("does not stack-overflow on a cyclic array", () => {
+    const arr: unknown[] = [];
+    arr.push(arr);
+    const out = redact(arr);
+    expect(Array.isArray(out)).toBe(true);
+    expect(out[0]).toBe("[Circular]");
+  });
+});

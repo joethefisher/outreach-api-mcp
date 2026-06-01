@@ -71,7 +71,10 @@ export async function runTool<T>(
         tool: toolName,
         input: redact(input),
         result: "error",
-        errorEnvelope: result,
+        // SEC-01: the envelope may carry echoed user input (e.g. noResults
+        // wraps the original `query`/`filters`). Redact it on the way out so
+        // the value-scrubber catches any token-shaped string.
+        errorEnvelope: redact(result),
         totalMs,
       });
       return JSON.stringify(result, null, 2);
@@ -90,7 +93,8 @@ export async function runTool<T>(
       tool: toolName,
       input: redact(input),
       result: "error",
-      errorEnvelope: envelope,
+      // SEC-01: same reason as the success-path branch above.
+      errorEnvelope: redact(envelope),
       totalMs,
     });
     return JSON.stringify(envelope, null, 2);

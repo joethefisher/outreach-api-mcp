@@ -60,8 +60,8 @@ function emit(level: LogLevel, msg: string, ctx: Readonly<Record<string, unknown
 }
 
 // Sensitive keys redacted automatically. Covers OAuth credentials, bearer
-// tokens, PKCE state, and personally-identifying Outreach fields. Adding a
-// new sensitive key is part of the PR that introduces it.
+// tokens, PKCE artifacts, and personally-identifying Outreach fields. Adding
+// a new sensitive key is part of the PR that introduces it.
 const REDACT_KEYS: ReadonlySet<string> = new Set([
   "access_token",
   "refresh_token",
@@ -79,15 +79,44 @@ const REDACT_KEYS: ReadonlySet<string> = new Set([
   "bodyText",
 ]);
 
+// Value-shaped patterns scrubbed regardless of the key the string appears
+// under (SEC-01). Catches tokens that leak via upstream error bodies
+// (api/client.ts puts the first 200 chars of a 4xx/5xx body into
+// outreachApiError.detail), values in user-supplied filters that the agent
+// echoes back through noResults, and any other path where a token-shaped
+// string reaches a non-sensitive key.
+const VALUE_SCRUBBERS: readonly RegExp[] = [
+  // OAuth bearer header value.
+  /Bearer\s+[A-Za-z0-9._\-+/=]+/g,
+  // Form-encoded OAuth/PKCE fields anywhere in a string.
+  /(access_token|refresh_token|client_secret|code_verifier|code|state|token|bearer)=([^&\s"']+)/gi,
+  // JWT-shaped values (three base64url segments separated by `.`).
+  /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g,
+];
+
+function scrubString(value: string): string {
+  let out = value;
+  for (const pattern of VALUE_SCRUBBERS) out = out.replace(pattern, "[REDACTED]");
+  return out;
+}
+
 export function redact<T>(input: T): T {
+  return redactValue(input, new WeakSet()) as T;
+}
+
+function redactValue(input: unknown, seen: WeakSet<object>): unknown {
   if (input === null || input === undefined) return input;
+  if (typeof input === "string") return scrubString(input);
   if (typeof input !== "object") return input;
+  // SEC-06 circular-reference guard.
+  if (seen.has(input)) return "[Circular]";
+  seen.add(input);
   if (Array.isArray(input)) {
-    return input.map((entry: unknown) => redact(entry)) as unknown as T;
+    return input.map((entry: unknown) => redactValue(entry, seen));
   }
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
-    out[key] = REDACT_KEYS.has(key) ? "[REDACTED]" : redact(value);
+    out[key] = REDACT_KEYS.has(key) ? "[REDACTED]" : redactValue(value, seen);
   }
-  return out as T;
+  return out;
 }
