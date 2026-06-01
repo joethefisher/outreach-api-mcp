@@ -1,7 +1,8 @@
 // getProspectProfile — full 360 view of a prospect (parallel fan-out).
 
-import { daysAgoISO, profileUrl, runTool } from "./_helpers.js";
 import { range, relId } from "../api/filters.js";
+
+import { daysAgoISO, profileUrl, runTool } from "./_helpers.js";
 
 export interface GetProspectProfileInput {
   readonly prospectId: number;

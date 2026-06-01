@@ -1,11 +1,12 @@
 // searchProspects — find prospects by name, email, company, owner, stage,
 // active sequence, or recent activity.
 
-import { profileUrl, runTool } from "./_helpers.js";
-import { resolveAccountByName, resolveStageByName, resolveUserByName } from "./_resolvers.js";
 import type { OutreachClient } from "../api/client.js";
 import { range, relId, type FilterMap } from "../api/filters.js";
 import { ambiguousMatch, noResults } from "../errors/envelopes.js";
+
+import { profileUrl, runTool } from "./_helpers.js";
+import { resolveAccountByName, resolveStageByName, resolveUserByName } from "./_resolvers.js";
 
 export interface SearchProspectsInput {
   readonly query?: string | null;

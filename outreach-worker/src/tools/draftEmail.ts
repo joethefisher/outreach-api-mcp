@@ -4,8 +4,9 @@
 // The agent's system prompt covers the drafting playbook — read context,
 // write subject + body, present in chat, remind user to copy into Outreach.
 
-import { daysAgoISO, profileUrl, runTool } from "./_helpers.js";
 import { range, relId } from "../api/filters.js";
+
+import { daysAgoISO, profileUrl, runTool } from "./_helpers.js";
 
 export interface DraftEmailInput {
   readonly prospectId: number;

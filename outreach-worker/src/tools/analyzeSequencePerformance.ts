@@ -1,10 +1,11 @@
 // analyzeSequencePerformance — aggregated open/click/reply/bounce/optout/completion
 // rates over a date range, optionally grouped (day, week, step).
 
-import { daysAgoISO, profileUrl, runTool, todayISO } from "./_helpers.js";
 import type { OutreachClient } from "../api/client.js";
 import { range, relId, type FilterMap } from "../api/filters.js";
 import { tooLarge } from "../errors/envelopes.js";
+
+import { daysAgoISO, profileUrl, runTool, todayISO } from "./_helpers.js";
 
 const MAX_PAGES = 50;
 const MAX_RECORDS = 50_000;

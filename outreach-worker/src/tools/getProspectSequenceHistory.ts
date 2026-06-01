@@ -1,7 +1,8 @@
 // getProspectSequenceHistory — every sequence a prospect has been on, chronologically.
 
-import { profileUrl, runTool } from "./_helpers.js";
 import { relId } from "../api/filters.js";
+
+import { profileUrl, runTool } from "./_helpers.js";
 
 export interface GetProspectSequenceHistoryInput {
   readonly prospectId: number;

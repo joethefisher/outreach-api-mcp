@@ -4,13 +4,6 @@
 // either a current bearer token or a thrown `AuthError` carrying an
 // agent-facing envelope. Reset helpers are exposed for tests.
 
-import {
-  OAuthClient,
-  OAuthInvalidGrantError,
-  OAuthNotInitializedError,
-  type OAuthClientOptions,
-} from "./oauth.js";
-import { FileTokenCache } from "./tokenCache.js";
 import { loadRuntimeConfig } from "../config/index.js";
 import {
   oauthNotConnected,
@@ -18,6 +11,14 @@ import {
   type OAuthNotConnectedError,
   type TokenInvalidError,
 } from "../errors/envelopes.js";
+
+import {
+  OAuthClient,
+  OAuthInvalidGrantError,
+  OAuthNotInitializedError,
+  type OAuthClientOptions,
+} from "./oauth.js";
+import { FileTokenCache } from "./tokenCache.js";
 
 const OUTREACH_TOKEN_ENDPOINT = "https://api.outreach.io/oauth/token";
 

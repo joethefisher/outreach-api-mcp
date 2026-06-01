@@ -59,10 +59,13 @@ export default tseslint.config(
       // ─── No default exports — named only ─────────────────────────────────────
       "import/no-default-export": "error",
       "import/no-cycle": ["error", { maxDepth: 10 }],
+      // Split parent/sibling/index into separate ordered groups so the
+      // `.` vs `/` collation that varies across ICU/Node versions does not
+      // affect import order (NEW-7). Within each group, alphabetize.
       "import/order": [
         "error",
         {
-          groups: [["builtin", "external"], "internal", ["parent", "sibling", "index"]],
+          groups: [["builtin", "external"], "internal", "parent", "sibling", "index"],
           "newlines-between": "always",
           alphabetize: { order: "asc", caseInsensitive: true },
         },

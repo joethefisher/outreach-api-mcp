@@ -1,9 +1,10 @@
 // searchTemplates — by name, owner, or content keyword.
 
-import { profileUrl, runTool } from "./_helpers.js";
-import { resolveUserByName } from "./_resolvers.js";
 import { relId, type FilterMap } from "../api/filters.js";
 import { ambiguousMatch, noResults } from "../errors/envelopes.js";
+
+import { profileUrl, runTool } from "./_helpers.js";
+import { resolveUserByName } from "./_resolvers.js";
 
 export interface SearchTemplatesInput {
   readonly query?: string | null;

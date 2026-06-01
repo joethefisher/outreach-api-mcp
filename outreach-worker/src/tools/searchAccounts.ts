@@ -1,9 +1,10 @@
 // searchAccounts — by name, domain, owner, industry, named flag, intent score, or recent updates.
 
-import { profileUrl, runTool } from "./_helpers.js";
-import { resolveUserByName } from "./_resolvers.js";
 import { range, relId, type FilterMap } from "../api/filters.js";
 import { ambiguousMatch, noResults } from "../errors/envelopes.js";
+
+import { profileUrl, runTool } from "./_helpers.js";
+import { resolveUserByName } from "./_resolvers.js";
 
 export interface SearchAccountsInput {
   readonly query?: string | null;

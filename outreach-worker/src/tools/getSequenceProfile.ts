@@ -5,9 +5,10 @@
 // those fail, the response carries `unavailableSections` so the agent can be
 // truthful about what's missing rather than failing the whole tool.
 
-import { profileUrl, runTool } from "./_helpers.js";
 import { OutreachApiException } from "../api/client.js";
 import { relId } from "../api/filters.js";
+
+import { profileUrl, runTool } from "./_helpers.js";
 
 export interface GetSequenceProfileInput {
   readonly sequenceId: number;
