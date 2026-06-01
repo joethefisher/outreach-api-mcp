@@ -98,6 +98,39 @@ describe("CustomFieldSchemaCache — population", () => {
     expect(client.fetchTypesCalls).toBe(1);
   });
 
+  it("scrubs token-shaped strings inside the fetch-failure warn log (NEW-3)", async () => {
+    // Reproduces the residual SEC-01 leak the second-pass review flagged.
+    // The fetch failure logs `{ message: e.message }`; if the upstream error
+    // message embedded a Bearer header / form-encoded token / JWT — as it
+    // would when client.ts pushes the first 200 chars of an upstream 4xx/5xx
+    // body into outreachApiError.detail — that token must never reach stderr.
+    configureLogger("warn");
+    const captured: string[] = [];
+    const writeSpy = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      captured.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+      return true;
+    });
+    try {
+      const evilMessage =
+        "Outreach API returned 500: Authorization: Bearer abc.def.ghi-secret; " +
+        "refresh_token=very-secret-rt; jwt=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.SIGNATURE-x";
+      const client = stubClient(new Error(evilMessage));
+      const cache = new CustomFieldSchemaCache(client);
+      await cache.ensureLoaded();
+
+      expect(captured.length).toBeGreaterThan(0);
+      const line = captured.join("");
+      expect(line).toContain("schema.cache.load.failed");
+      expect(line).toContain("[REDACTED]");
+      // No fragment of any of the token-shaped values is allowed through.
+      expect(line).not.toContain("abc.def.ghi-secret");
+      expect(line).not.toContain("very-secret-rt");
+      expect(line).not.toContain("eyJhbGciOiJIUzI1NiJ9");
+    } finally {
+      writeSpy.mockRestore();
+    }
+  });
+
   it("dedupes concurrent ensureLoaded() into one fetch", async () => {
     const client = stubClient(liveTypesResponse);
     const cache = new CustomFieldSchemaCache(client);

@@ -4,8 +4,12 @@
 // SECURITY.md). Every log line goes to stderr via `process.stderr.write`.
 // `console.log` is forbidden across the codebase by lint.
 //
-// Sensitive keys are auto-redacted before serialization. Add new keys to
-// REDACT_KEYS in the same PR that introduces them.
+// Defense in depth (SEC-01, NEW-3): `emit()` always calls `redact(ctx)`
+// before serialization. Callers DO NOT need to remember to wrap their
+// payload — known-sensitive keys are masked, every string leaf is run
+// through the value scrubber (Bearer / OAuth-form / JWT), and a
+// circular-reference guard prevents stack overflow. Adding a new
+// always-sensitive key is part of the PR that introduces it.
 //
 // Level is configured explicitly by the entry point via `configureLogger()`.
 // The module starts at "info" and never reads env directly; that avoids any
@@ -50,6 +54,9 @@ export const logger: Logger = {
 
 function emit(level: LogLevel, msg: string, ctx: Readonly<Record<string, unknown>>): void {
   if (LEVEL_WEIGHTS[level] < currentThreshold) return;
+  // SEC-01 / NEW-3: redact is applied here unconditionally so a caller that
+  // forgets to scrub their own payload still emits a safe line. Belt-and-
+  // suspenders: `tools/_helpers.ts:runTool` ALSO redacts before calling.
   const line = JSON.stringify({
     ts: new Date().toISOString(),
     level,
