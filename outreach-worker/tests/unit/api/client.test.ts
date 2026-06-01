@@ -206,6 +206,38 @@ describe("LiveOutreachClient — 429 retry-after", () => {
       envelope: { error: "rateLimited", retryAfterSeconds: 30 },
     });
   });
+
+  it("surfaces rateLimited immediately when Retry-After exceeds the auto-retry cap (AVL-01)", async () => {
+    // Retry-After of 3600 (1 hour) would otherwise block the server. The
+    // client surfaces rateLimited with the real wait so the agent can decide.
+    const env = makeClient({
+      responses: [jsonResponse(429, { errors: [] }, { "Retry-After": "3600" })],
+    });
+    await expect(env.client.list("prospect")).rejects.toMatchObject({
+      envelope: { error: "rateLimited", retryAfterSeconds: 3600 },
+    });
+    // No retry should be made — only one fetch call.
+    expect(env.calls).toHaveLength(1);
+  });
+});
+
+describe("LiveOutreachClient — fetch timeout (AVL-02)", () => {
+  it("translates fetch AbortError into a timeout envelope", async () => {
+    const fetchImpl: typeof fetch = () => {
+      const err = new Error("aborted");
+      err.name = "AbortError";
+      return Promise.reject(err);
+    };
+    const client = new LiveOutreachClient({
+      apiBase: API_BASE,
+      getAccessToken: () => Promise.resolve("tok"),
+      invalidateAccessToken: () => undefined,
+      fetch: fetchImpl,
+    });
+    await expect(client.list("prospect")).rejects.toMatchObject({
+      envelope: { error: "timeout" },
+    });
+  });
 });
 
 describe("LiveOutreachClient — 403 scope translation", () => {

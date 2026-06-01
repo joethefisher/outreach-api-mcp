@@ -97,6 +97,31 @@ describe("RateLimitTracker.recommendDelaySeconds", () => {
     );
     expect(t.recommendDelaySeconds(1700000100)).toBe(0);
   });
+
+  it("clamps pacing recommendation to MAX_PACING_DELAY_SECONDS (AVL-01)", () => {
+    const t = new RateLimitTracker();
+    // 1 call left, reset 1 hour away → unclamped recommendation would be 3600.
+    t.observe(
+      headers({
+        "X-RateLimit-Limit": "100",
+        "X-RateLimit-Remaining": "1",
+        "X-RateLimit-Reset": "1700003600",
+      }),
+    );
+    expect(t.recommendDelaySeconds(1700000000)).toBe(60);
+  });
+
+  it("returns 0 when X-RateLimit-Limit is 0 instead of NaN (AVL-05)", () => {
+    const t = new RateLimitTracker();
+    t.observe(
+      headers({
+        "X-RateLimit-Limit": "0",
+        "X-RateLimit-Remaining": "0",
+        "X-RateLimit-Reset": "1700000060",
+      }),
+    );
+    expect(t.recommendDelaySeconds(1700000000)).toBe(0);
+  });
 });
 
 describe("parseRetryAfter", () => {

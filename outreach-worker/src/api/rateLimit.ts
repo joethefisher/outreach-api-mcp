@@ -14,6 +14,10 @@ const WARN_THRESHOLD_PCT = 10;
 /** Fallback wait when Retry-After is absent or unparseable. */
 const DEFAULT_RETRY_AFTER_SECONDS = 30;
 
+/** Cap on the pacing recommendation. Bounds availability when the server
+ *  reports a far-future reset window — see AVL-01 / AVL-05 in code-review. */
+const MAX_PACING_DELAY_SECONDS = 60;
+
 export interface RateLimitState {
   readonly limit: number;
   readonly remaining: number;
@@ -43,15 +47,22 @@ export class RateLimitTracker {
     }
   }
 
-  /** Seconds to wait before the next call to stay under the warn threshold. */
+  /**
+   * Seconds to wait before the next call to stay under the warn threshold.
+   * Clamped at MAX_PACING_DELAY_SECONDS so a misbehaving upstream cannot
+   * stall the server with a multi-hour reset window.
+   */
   recommendDelaySeconds(now: number = Math.floor(Date.now() / 1000)): number {
     const state = this.state;
     if (state === null) return 0;
+    // Guard against a zero or non-positive limit (AVL-05).
+    if (!Number.isFinite(state.limit) || state.limit <= 0) return 0;
     const pctRemaining = (state.remaining / state.limit) * 100;
     if (pctRemaining > WARN_THRESHOLD_PCT) return 0;
     const secsUntilReset = Math.max(0, state.resetAt - now);
-    if (state.remaining <= 0) return secsUntilReset;
-    return Math.max(0, secsUntilReset / state.remaining);
+    const raw =
+      state.remaining <= 0 ? secsUntilReset : Math.max(0, secsUntilReset / state.remaining);
+    return Math.min(raw, MAX_PACING_DELAY_SECONDS);
   }
 
   current(): RateLimitState | null {

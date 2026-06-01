@@ -25,6 +25,7 @@ import {
   outreachApiError,
   rateLimited,
   scopeMissing,
+  timeout,
   tokenInvalid,
   type ErrorEnvelope,
 } from "../errors/envelopes.js";
@@ -239,10 +240,18 @@ export class LiveOutreachClient implements OutreachClient {
   /**
    * Issue a GET with the access token attached, observing rate limits and
    * retrying once on 401 (after force-refreshing the token) or 429 (after
-   * waiting Retry-After). Any other failure surfaces immediately.
+   * waiting Retry-After, when the wait is bounded). Any other failure surfaces
+   * immediately.
+   *
+   * Availability bounds (AVL-01 / AVL-02): we never sleep more than
+   * MAX_AUTO_RETRY_SECONDS and every fetch carries a REQUEST_TIMEOUT_MS
+   * timeout. An upstream that returns `Retry-After: 86400` would otherwise
+   * hang the single-threaded server for a day; we surface `rateLimited` with
+   * the actual wait so the agent can tell the user when to come back.
    */
   private async requestWithRetries(path: string, queryString: string): Promise<Response> {
-    // 1) Soft-throttle if we're near the rate-limit warn band.
+    // 1) Soft-throttle if we're near the rate-limit warn band. Capped — see
+    //    rateLimit.recommendDelaySeconds — so we never block beyond the cap.
     const delay = this.rateLimit.recommendDelaySeconds();
     if (delay > 0) {
       logger.debug("api.rateLimit.pace", { delaySeconds: delay });
@@ -259,9 +268,15 @@ export class LiveOutreachClient implements OutreachClient {
       response = await this.attempt(path, queryString);
     }
 
-    // 4) On 429, wait Retry-After and retry once.
+    // 4) On 429, wait Retry-After and retry once — only when the wait is
+    //    bounded. A larger value surfaces directly as rateLimited so the
+    //    server doesn't block.
     if (response.status === 429) {
       const wait = parseRetryAfter(response.headers);
+      if (wait > MAX_AUTO_RETRY_SECONDS) {
+        logger.warn("api.429.surfacing", { waitSeconds: wait, cap: MAX_AUTO_RETRY_SECONDS });
+        throw new OutreachApiException(rateLimited(wait));
+      }
       logger.warn("api.429.retrying", { waitSeconds: wait });
       await sleep(wait * 1000);
       response = await this.attempt(path, queryString);
@@ -295,15 +310,24 @@ export class LiveOutreachClient implements OutreachClient {
     const url = `${this.apiBase}${path}${queryString === "" ? "" : `?${queryString}`}`;
     // Log path only — query strings include filter values that may be PII.
     logger.debug("api.request", { path });
-    const response = await this.fetchImpl(url, {
-      // Read-only invariant: GET is the only method this client ever emits.
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: "application/vnd.api+json",
-        "Content-Type": "application/vnd.api+json",
-      },
-    });
+    let response: Response;
+    try {
+      response = await this.fetchImpl(url, {
+        // Read-only invariant: GET is the only method this client ever emits.
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/vnd.api+json",
+          "Content-Type": "application/vnd.api+json",
+        },
+        // AVL-02: every request is bounded so a stalled connection cannot
+        // hang the single-threaded server.
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+    } catch (e) {
+      if (isAbortError(e)) throw new OutreachApiException(timeout());
+      throw e;
+    }
     this.rateLimit.observe(response.headers);
     return response;
   }
@@ -331,8 +355,18 @@ export function resetOutreachClient(): void {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+/** Maximum seconds the client will block on a Retry-After or rate-limit pace. */
+const MAX_AUTO_RETRY_SECONDS = 60;
+
+/** Per-request fetch timeout. Bounds the worst-case hang for a stalled upstream. */
+const REQUEST_TIMEOUT_MS = 30_000;
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isAbortError(value: unknown): boolean {
+  return value instanceof Error && (value.name === "AbortError" || value.name === "TimeoutError");
 }
 
 /**
