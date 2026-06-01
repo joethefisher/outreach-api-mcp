@@ -45,6 +45,23 @@ export class StubOutreachClient implements OutreachClient {
     const rows = this.data.list?.[resource] ?? [];
     const filtered =
       options.filters === undefined ? rows : rows.filter((row) => matches(row, options.filters));
+
+    // Pagination: when seeded rows exceed the requested pageSize, return a
+    // slice + a numeric-index cursor. Tools that walk pages (NEW-1's
+    // fetchAccountProspectIds) can then exercise their cap logic. Single-
+    // page tests that don't care just see all their rows in one shot.
+    const pageSize = options.pageSize;
+    if (typeof pageSize === "number" && pageSize > 0 && filtered.length > pageSize) {
+      const requestedCursor = options.cursor;
+      const start =
+        typeof requestedCursor === "string" && /^\d+$/.test(requestedCursor)
+          ? Number(requestedCursor)
+          : 0;
+      const slice = filtered.slice(start, start + pageSize);
+      const nextStart = start + pageSize;
+      const nextCursor: string | null = nextStart < filtered.length ? String(nextStart) : null;
+      return Promise.resolve({ data: slice as readonly T[], nextCursor });
+    }
     return Promise.resolve({ data: filtered as readonly T[], nextCursor: null });
   }
 

@@ -252,4 +252,69 @@ describe("Block A — prospects & accounts", () => {
       });
     }
   });
+
+  it("getAccountProfile signals truncation + still scopes counts when the account exceeds MAX_SCOPE_PROSPECTS (NEW-1)", async () => {
+    // Seed 600 prospects on the account, which is past the MAX_SCOPE_PROSPECTS
+    // cap of 500. The tool's paginated scope fetch should stop at the cap
+    // (with `truncated: true`), and every count filter must still carry a
+    // `prospect: relId([...])` scope — proving the counts aren't reverting to
+    // workspace-wide when the cap kicks in.
+    const seededProspects = Array.from({ length: 600 }, (_, i) => ({
+      id: 1000 + i,
+      accountId: 7,
+      firstName: `P${String(i)}`,
+      lastName: "Test",
+      engagedScore: 50,
+      stageName: "Demo",
+    }));
+    const env = await installToolContext({
+      get: {
+        account: {
+          7: { id: 7, name: "BigCo", domain: "bigco.com" },
+        },
+      },
+      list: {
+        prospect: seededProspects,
+        opportunity: [],
+        sequenceState: [],
+      },
+      count: { mailing: 9000, call: 1000, task: 4000, sequenceState: 800 },
+    });
+    const raw = await getAccountProfile({ accountId: 7 });
+    const result = parseSuccess(raw) as unknown as {
+      recentActivity: {
+        scopeProspectCount: number;
+        truncated: boolean;
+        scopeTruncatedNote?: string;
+      };
+    };
+
+    expect(result.recentActivity.scopeProspectCount).toBe(500);
+    expect(result.recentActivity.truncated).toBe(true);
+    expect(result.recentActivity.scopeTruncatedNote).toBeDefined();
+    expect(result.recentActivity.scopeTruncatedNote).toContain("500");
+
+    // The scope-fetch list calls must have requested `prospect` with the
+    // account filter and a non-trivial pageSize, and they must have actually
+    // followed pagination (more than one list call against `prospect` with
+    // the account filter).
+    const scopeListCalls = env.listCalls.filter(
+      (c) =>
+        c.resource === "prospect" &&
+        (c.options?.fields as { prospect?: readonly string[] } | undefined)?.prospect?.length === 0,
+    );
+    expect(scopeListCalls.length).toBeGreaterThan(1);
+
+    // Every count call must STILL carry the prospect scope — first 500 IDs
+    // from the seeded set — even though we hit the cap.
+    const expectedIds = seededProspects.slice(0, 500).map((p) => p.id);
+    const scoped = ["mailing", "task", "call", "sequenceState"] as const;
+    for (const resource of scoped) {
+      const call = env.countCalls.find((c) => c.resource === resource);
+      expect(call, `expected a count call for ${resource}`).toBeDefined();
+      const prospectFilter = call?.filters?.["prospect"] as { __relId: number[] } | undefined;
+      expect(prospectFilter, `${resource} count must be scoped by prospect`).toBeDefined();
+      expect(prospectFilter?.__relId).toEqual(expectedIds);
+    }
+  });
 });
