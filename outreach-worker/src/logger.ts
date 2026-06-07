@@ -139,14 +139,24 @@ function redactValue(input: unknown, seen: WeakSet<object>): unknown {
   if (typeof input === "string") return scrubString(input);
   if (typeof input !== "object") return input;
   // SEC-06 circular-reference guard.
+  //
+  // NEW-6: track only nodes on the *current path* through the graph. A
+  // sibling reference to the same shared, acyclic object should be
+  // redacted normally, not collapsed to "[Circular]". We add on the way
+  // down and delete on the way back up so `seen` represents the active
+  // call stack, not every node we've ever visited.
   if (seen.has(input)) return "[Circular]";
   seen.add(input);
-  if (Array.isArray(input)) {
-    return input.map((entry: unknown) => redactValue(entry, seen));
+  try {
+    if (Array.isArray(input)) {
+      return input.map((entry: unknown) => redactValue(entry, seen));
+    }
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+      out[key] = REDACT_KEYS.has(key) ? "[REDACTED]" : redactValue(value, seen);
+    }
+    return out;
+  } finally {
+    seen.delete(input);
   }
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
-    out[key] = REDACT_KEYS.has(key) ? "[REDACTED]" : redactValue(value, seen);
-  }
-  return out;
 }
