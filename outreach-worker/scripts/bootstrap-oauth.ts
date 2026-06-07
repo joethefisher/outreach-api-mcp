@@ -15,15 +15,13 @@
 // Run via:  npm run bootstrap:oauth
 
 import { spawn } from "node:child_process";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
 import {
+  awaitCallback,
   buildAuthorizeUrl,
-  CallbackError,
   exchangeAuthorizationCode,
   generatePkcePair,
   generateState,
-  parseCallback,
 } from "../src/auth/bootstrap.js";
 import { OUTREACH_READ_SCOPES, scopeString } from "../src/auth/scopes.js";
 import { FileTokenCache } from "../src/auth/tokenCache.js";
@@ -32,11 +30,6 @@ import { loadBootstrapConfig } from "../src/config/index.js";
 const AUTHORIZE_ENDPOINT = "https://api.outreach.io/oauth/authorize";
 const TOKEN_ENDPOINT = "https://api.outreach.io/oauth/token";
 const CALLBACK_PATH = "/callback";
-const CALLBACK_TIMEOUT_MS = 5 * 60 * 1000;
-
-interface CallbackPayload {
-  readonly code: string;
-}
 
 async function main(): Promise<void> {
   const cfg = loadBootstrapConfig();
@@ -64,10 +57,10 @@ async function main(): Promise<void> {
   console.log(`  ${authorizeUrl.toString()}`);
   console.log();
 
-  const callbackPromise = awaitCallback(cfg.redirectPort, state);
+  const handle = await awaitCallback(cfg.redirectPort, state);
   openBrowser(authorizeUrl.toString());
 
-  const callback = await callbackPromise;
+  const callback = await handle.result;
   console.log("✓ Callback received. Exchanging authorization code for token...");
 
   const tokens = await exchangeAuthorizationCode({
@@ -96,66 +89,6 @@ async function main(): Promise<void> {
   console.log("---");
   console.log();
   console.log("You can now start the MCP server with: node dist/index.js");
-}
-
-function awaitCallback(port: number, expectedState: string): Promise<CallbackPayload> {
-  return new Promise<CallbackPayload>((resolve, reject) => {
-    const server = createServer((req: IncomingMessage, res: ServerResponse): void => {
-      const url = new URL(req.url ?? "/", `http://127.0.0.1:${String(port)}`);
-      if (url.pathname !== CALLBACK_PATH) {
-        respond(res, 404, "Not Found");
-        return;
-      }
-      try {
-        const parsed = parseCallback(url.searchParams, expectedState);
-        respond(res, 200, "Outreach authorization complete. You can close this tab.");
-        cleanup();
-        resolve({ code: parsed.code });
-      } catch (e) {
-        const message = e instanceof CallbackError ? e.message : "Unexpected callback error.";
-        respond(res, 400, escapeHtml(message));
-        cleanup();
-        reject(e instanceof Error ? e : new Error(String(e)));
-      }
-    });
-
-    const timeoutHandle = setTimeout(() => {
-      cleanup();
-      reject(
-        new Error(
-          `Timed out waiting for OAuth callback after ${String(CALLBACK_TIMEOUT_MS / 1000)}s.`,
-        ),
-      );
-    }, CALLBACK_TIMEOUT_MS);
-
-    function cleanup(): void {
-      clearTimeout(timeoutHandle);
-      server.close();
-    }
-
-    server.on("error", (e) => {
-      cleanup();
-      reject(e);
-    });
-    server.listen(port, "127.0.0.1");
-  });
-}
-
-function respond(res: ServerResponse, status: number, message: string): void {
-  res.statusCode = status;
-  res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.end(
-    `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>outreach-api-mcp</title></head><body style="font-family:system-ui,sans-serif;max-width:640px;margin:80px auto;padding:0 24px"><h1>${message}</h1></body></html>`,
-  );
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function openBrowser(url: string): void {
