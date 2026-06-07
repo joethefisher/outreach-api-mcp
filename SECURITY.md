@@ -49,3 +49,4 @@ The MCP server runs as a local subprocess of an MCP client (Claude Desktop, an I
 - OAuth `state`: 32 bytes from `crypto.randomBytes`, base64url-encoded
 - Token cache file permissions: `0600` (owner read/write only)
 - Token cache parent directory permissions: `0700` (owner only)
+- Post-write fstat verification: after the atomic rename, the file is re-opened read-only and `stat()` confirms `(mode & 0o777) === 0o600`. A mismatch throws `TokenCachePermissionError` rather than leaving credentials at unsafe permissions — see `tokenCache.ts` SEC-03 path.

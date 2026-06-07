@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { FileTokenCache, type TokenCacheData } from "../../../src/auth/tokenCache.js";
+import {
+  FileTokenCache,
+  TokenCachePermissionError,
+  type TokenCacheData,
+} from "../../../src/auth/tokenCache.js";
 
 let testDir: string;
 let cachePath: string;
@@ -73,6 +77,45 @@ describe("FileTokenCache.write", () => {
     await cache.write({ ...sampleData, refreshToken: "rt-rotated" });
     const out = await cache.read();
     expect(out?.refreshToken).toBe("rt-rotated");
+  });
+
+  it("post-write fstat throws TokenCachePermissionError when mode bits diverge (SEC-03)", async () => {
+    // Subclass the cache to simulate a filesystem that silently ignores
+    // chmod (some overlay/network mounts). After the production rename,
+    // the override loosens the permissions; the SEC-03 fstat must catch
+    // it and refuse to leave credentials at world-readable.
+    class LoosenedCache extends FileTokenCache {
+      override async write(data: TokenCacheData): Promise<void> {
+        const realChmod = fs.chmod.bind(fs);
+        let renamed = false;
+        const spied = async (
+          path: Parameters<typeof fs.chmod>[0],
+          mode: Parameters<typeof fs.chmod>[1],
+        ): Promise<void> => {
+          if (renamed) {
+            return realChmod(path, 0o644);
+          }
+          return realChmod(path, mode);
+        };
+        const realRename = fs.rename.bind(fs);
+        const originalChmod = fs.chmod.bind(fs);
+        const originalRename = fs.rename.bind(fs);
+        (fs as { chmod: typeof spied }).chmod = spied;
+        const renamingShim: typeof fs.rename = async (from, to) => {
+          await realRename(from, to);
+          renamed = true;
+        };
+        (fs as { rename: typeof renamingShim }).rename = renamingShim;
+        try {
+          await super.write(data);
+        } finally {
+          (fs as { chmod: typeof originalChmod }).chmod = originalChmod;
+          (fs as { rename: typeof originalRename }).rename = originalRename;
+        }
+      }
+    }
+    const cache = new LoosenedCache(cachePath);
+    await expect(cache.write(sampleData)).rejects.toBeInstanceOf(TokenCachePermissionError);
   });
 
   it("rejects writes that would produce malformed data on round-trip", async () => {
