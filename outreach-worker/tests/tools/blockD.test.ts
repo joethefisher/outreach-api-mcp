@@ -51,6 +51,36 @@ describe("Block D — activity, tasks, audit", () => {
     expect(result.totalCount).toBe(1);
   });
 
+  it("getOpenTasks surfaces totalCount=null + totalCountUnknown=true on throttled count (COR-12)", async () => {
+    // Outreach signals an un-countable result as { count: -1, truncated: true }
+    // (after the COR-12 client.count fix translates the throttled response).
+    // The tool must NOT report this as a real "0" — it should be null with a
+    // clear unknown signal.
+    await installToolContext({
+      list: {
+        task: [
+          {
+            id: 1,
+            action: "call",
+            state: "incomplete",
+            dueAt: "2026-06-01T00:00:00Z",
+            prospectId: 42,
+          },
+        ],
+      },
+      count: { task: { count: -1, truncated: true } },
+    });
+    const raw = await getOpenTasks({});
+    const result = parseSuccess(raw) as unknown as {
+      tasks: { id: number }[];
+      totalCount: number | null;
+      totalCountUnknown: boolean;
+    };
+    expect(result.tasks).toHaveLength(1); // the page itself is fine
+    expect(result.totalCount).toBeNull();
+    expect(result.totalCountUnknown).toBe(true);
+  });
+
   it("getTeamRoster sorts alphabetically and filters out locked users by default", async () => {
     await installToolContext({
       list: {
