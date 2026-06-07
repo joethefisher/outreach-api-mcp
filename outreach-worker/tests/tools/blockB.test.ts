@@ -195,7 +195,9 @@ describe("Block B — searchSequences", () => {
       },
     });
     const raw = await searchSequences({ enabled: true });
-    const result = parseSuccess(raw) as unknown as { sequences: { id: number; enabled: boolean }[] };
+    const result = parseSuccess(raw) as unknown as {
+      sequences: { id: number; enabled: boolean }[];
+    };
     expect(result.sequences.map((s) => s.id)).toEqual([1]);
     expect(result.sequences.every((s) => s.enabled)).toBe(true);
   });
@@ -327,7 +329,11 @@ describe("Block B — compareSequences", () => {
       dateRangeTo: "2026-05-31",
     });
     const result = parseSuccess(raw) as unknown as {
-      sequences: { sequenceId: number; totals: Record<string, number>; rates: Record<string, number> }[];
+      sequences: {
+        sequenceId: number;
+        totals: Record<string, number>;
+        rates: Record<string, number>;
+      }[];
       winners: { bestReplyRate: { sequenceId: number; rate: number } | null };
     };
 
