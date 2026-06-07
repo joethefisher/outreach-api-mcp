@@ -6,7 +6,7 @@
 
 import { range, relId } from "../api/filters.js";
 
-import { daysAgoISO, optionalFetch, profileUrl, runTool } from "./_helpers.js";
+import { daysAgoISO, nameFromParts, optionalFetch, profileUrl, runTool } from "./_helpers.js";
 
 export interface DraftEmailInput {
   readonly prospectId: number;
@@ -177,7 +177,7 @@ export async function draftEmail(input: DraftEmailInput): Promise<string> {
     return {
       prospect: {
         id: prospect["id"],
-        name: nameFromParts(prospect["firstName"], prospect["lastName"]),
+        name: nameFromParts(prospect["firstName"], prospect["lastName"]) ?? "",
         title: prospect["title"],
         email: primaryEmail,
         accountName: prospect["accountName"],
@@ -203,8 +203,4 @@ export async function draftEmail(input: DraftEmailInput): Promise<string> {
       ...(unavailableSections.length > 0 && { unavailableSections }),
     };
   });
-}
-
-function nameFromParts(first: unknown, last: unknown): string {
-  return `${typeof first === "string" ? first : ""} ${typeof last === "string" ? last : ""}`.trim();
 }

@@ -3,7 +3,7 @@
 import { type FilterMap } from "../api/filters.js";
 import { validationError } from "../errors/envelopes.js";
 
-import { runTool, validateDateRange } from "./_helpers.js";
+import { clamp, runTool, validateDateRange } from "./_helpers.js";
 
 export interface GetAuditLogInput {
   readonly resourceType?: string | null;
@@ -122,8 +122,4 @@ function daySpan(from: string, to: string): number {
   const f = new Date(from).getTime();
   const t = new Date(to).getTime();
   return Math.floor((t - f) / (24 * 60 * 60 * 1000));
-}
-
-function clamp(n: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, Math.floor(n)));
 }

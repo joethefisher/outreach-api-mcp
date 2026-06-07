@@ -4,7 +4,16 @@ import { OutreachApiException } from "../api/client.js";
 import { range, relId, type FilterMap } from "../api/filters.js";
 import { tooLarge } from "../errors/envelopes.js";
 
-import { daysAgoISO, profileUrl, runTool, todayISO, validateDateRange } from "./_helpers.js";
+import {
+  clamp,
+  daysAgoISO,
+  isNonEmpty,
+  nameFromParts,
+  profileUrl,
+  runTool,
+  todayISO,
+  validateDateRange,
+} from "./_helpers.js";
 
 export interface GetRecentMailingsInput {
   readonly dateRangeFrom?: string | null;
@@ -107,19 +116,4 @@ export async function getRecentMailings(input: GetRecentMailingsInput): Promise<
       dateRange: { from, to },
     };
   });
-}
-
-function isNonEmpty(s: string | null | undefined): s is string {
-  return s !== null && s !== undefined && s !== "";
-}
-
-function clamp(n: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, Math.floor(n)));
-}
-
-function nameFromParts(first: unknown, last: unknown): string | undefined {
-  if (typeof first !== "string" && typeof last !== "string") return undefined;
-  const combined =
-    `${typeof first === "string" ? first : ""} ${typeof last === "string" ? last : ""}`.trim();
-  return combined === "" ? undefined : combined;
 }

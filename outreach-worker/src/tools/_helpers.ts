@@ -129,6 +129,33 @@ export function daysAgoISO(n: number): string {
   return new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
+// DES-02: small helpers used across most tool files. Consolidated here so a
+// fix (e.g. "trim should also strip zero-width spaces") lives in one place
+// instead of needing N file edits.
+
+/** Clamp `n` between `lo` and `hi`, flooring fractional inputs first. */
+export function clamp(n: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, Math.floor(n)));
+}
+
+/** Type-guard: a string is "non-empty" only when it's a string and not "". */
+export function isNonEmpty(s: string | null | undefined): s is string {
+  return s !== null && s !== undefined && s !== "";
+}
+
+/**
+ * Build a human-readable name from possibly-missing first/last parts.
+ * Returns `undefined` when neither argument is a string, or when the
+ * concatenation is whitespace-only. Two callers that want an always-
+ * string return (drafts, activity summaries) explicitly use `?? ""`.
+ */
+export function nameFromParts(first: unknown, last: unknown): string | undefined {
+  if (typeof first !== "string" && typeof last !== "string") return undefined;
+  const combined =
+    `${typeof first === "string" ? first : ""} ${typeof last === "string" ? last : ""}`.trim();
+  return combined === "" ? undefined : combined;
+}
+
 // Profile-URL plural map mirrors the API's URL pluralization for the web app.
 const URL_PATH_PLURALS: Readonly<Record<string, string>> = {
   opportunity: "opportunities",
