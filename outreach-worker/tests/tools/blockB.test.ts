@@ -404,13 +404,97 @@ describe("Block B — compareSequences", () => {
         totals: Record<string, number>;
         rates: Record<string, number>;
       }[];
-      winners: { bestReplyRate: { sequenceId: number; rate: number } | null };
+      winners: {
+        bestReplyRate: { sequenceIds: number[]; rate: number; tied: boolean } | null;
+      };
     };
 
     expect(result.sequences.map((s) => s.sequenceId)).toEqual([1, 2]);
-    // Sequence 2 has the reply, so it wins reply-rate.
-    expect(result.winners.bestReplyRate?.sequenceId).toBe(2);
+    // Sequence 2 has the reply, so it wins reply-rate uncontested.
+    expect(result.winners.bestReplyRate?.sequenceIds).toEqual([2]);
     expect(result.winners.bestReplyRate?.rate).toBeGreaterThan(0);
+    expect(result.winners.bestReplyRate?.tied).toBe(false);
+  });
+
+  it("returns null winner when no sequence has any replies (COR-06)", async () => {
+    // All sequences at rate 0 — pre-fix the first id was returned as
+    // "winner" at rate 0. Post-fix returns null.
+    await installToolContext({
+      get: {
+        sequence: { 1: { id: 1, name: "A" }, 2: { id: 2, name: "B" } },
+      },
+      list: {
+        // Both sequences have a delivered mailing; neither has a reply.
+        mailing: [
+          {
+            id: 1,
+            sequenceId: 1,
+            state: "delivered",
+            createdAt: "2026-05-10T10:00:00Z",
+            deliveredAt: "2026-05-10T10:01:00Z",
+          },
+          {
+            id: 2,
+            sequenceId: 2,
+            state: "delivered",
+            createdAt: "2026-05-10T10:00:00Z",
+            deliveredAt: "2026-05-10T10:01:00Z",
+          },
+        ],
+        sequenceState: [],
+      },
+      count: { mailing: 2 },
+    });
+    const raw = await compareSequences({
+      sequenceIds: [1, 2],
+      dateRangeFrom: "2026-05-01",
+      dateRangeTo: "2026-05-31",
+    });
+    const result = parseSuccess(raw) as unknown as {
+      winners: { bestReplyRate: unknown };
+    };
+    expect(result.winners.bestReplyRate).toBeNull();
+  });
+
+  it("annotates failed sequences in failedSequences without aborting the comparison (COR-06)", async () => {
+    // Sequence 1 will fail (no get-fixture); sequence 2 succeeds. Pre-fix
+    // the whole comparison was aborted with the first error. Post-fix
+    // sequence 2's data still surfaces, and the failure is annotated.
+    await installToolContext({
+      get: {
+        // No fixture for id=1, so client.get rejects → analyze fails.
+        sequence: { 2: { id: 2, name: "Live one" } },
+      },
+      list: {
+        mailing: [
+          {
+            id: 200,
+            sequenceId: 2,
+            state: "delivered",
+            createdAt: "2026-05-10T10:00:00Z",
+            deliveredAt: "2026-05-10T10:01:00Z",
+            repliedAt: "2026-05-10T12:00:00Z",
+          },
+        ],
+        sequenceState: [],
+      },
+      count: { mailing: 1 },
+    });
+    const raw = await compareSequences({
+      sequenceIds: [1, 2],
+      dateRangeFrom: "2026-05-01",
+      dateRangeTo: "2026-05-31",
+    });
+    const result = parseSuccess(raw) as unknown as {
+      sequences: { sequenceId: number }[];
+      failedSequences?: { sequenceId: number; error: string }[];
+      winners: { bestReplyRate: { sequenceIds: number[] } | null };
+    };
+    expect(result.sequences.map((s) => s.sequenceId)).toEqual([2]);
+    expect(result.failedSequences).toHaveLength(1);
+    expect(result.failedSequences?.[0]?.sequenceId).toBe(1);
+    // Winner is still computed from the survivors.
+    expect(result.winners.bestReplyRate?.sequenceIds).toEqual([2]);
   });
 });
 
