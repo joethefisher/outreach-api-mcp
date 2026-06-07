@@ -14,10 +14,20 @@ import type {
 } from "../../src/api/client.js";
 import type { FilterMap, RangeFilter, RelationshipIdFilter } from "../../src/api/filters.js";
 
+export interface StubCountResult {
+  readonly count: number;
+  readonly truncated: boolean;
+}
+
 export interface StubData {
   readonly list?: Record<string, readonly Record<string, unknown>[]>;
   readonly get?: Record<string, Record<number, Record<string, unknown>>>;
-  readonly count?: Record<string, number>;
+  /**
+   * Seed count() responses per-resource. A plain number is `{ count: n,
+   * truncated: false }`; a full StubCountResult lets tests drive the
+   * throttled-count case (count: -1, truncated: true) — COR-12.
+   */
+  readonly count?: Record<string, number | StubCountResult>;
   readonly listUsers?: readonly OutreachUser[];
   readonly fetchTypes?: unknown;
   /** Force specific calls to reject. Used by AVL-03 degradation tests. */
@@ -92,7 +102,10 @@ export class StubOutreachClient implements OutreachClient {
     // Prefer a seeded count override; fall back to filtered-list length so a
     // test seeded only with `list` data gets a consistent count.
     const seeded = this.data.count?.[resource];
-    if (seeded !== undefined) return Promise.resolve({ count: seeded, truncated: false });
+    if (seeded !== undefined) {
+      if (typeof seeded === "number") return Promise.resolve({ count: seeded, truncated: false });
+      return Promise.resolve(seeded);
+    }
     const rows = this.data.list?.[resource] ?? [];
     const filtered = filters === undefined ? rows : rows.filter((row) => matches(row, filters));
     return Promise.resolve({ count: filtered.length, truncated: false });

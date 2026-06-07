@@ -180,9 +180,16 @@ export class LiveOutreachClient implements OutreachClient {
       pageSize: 1,
       count: true,
     });
+    // COR-12: Outreach signals "couldn't count" as { count: 0, count_truncated: true }.
+    // A caller that reads `count` without checking `truncated` first sees a
+    // real "0" for what's actually an unknown. Return `-1` (the sentinel
+    // safeCount() uses for "uncountable") so the distinction is preserved
+    // and `count: 0` always means an actual zero.
+    const truncated = result.countTruncated === true;
+    const rawCount = result.count ?? 0;
     return {
-      count: result.count ?? 0,
-      truncated: result.countTruncated === true,
+      count: truncated && rawCount === 0 ? -1 : rawCount,
+      truncated,
     };
   }
 
