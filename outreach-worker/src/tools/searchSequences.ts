@@ -64,6 +64,12 @@ export async function searchSequences(input: SearchSequencesInput): Promise<stri
       sort: "-updatedAt",
     });
 
+    // COR-05: when the wide-fallback path runs, the server-side
+    // `nextCursor !== null` truncated signal is structurally unreachable
+    // (the fallback rebuilds the result with nextCursor=null). Track
+    // truncation explicitly so the agent knows matches were dropped.
+    let fallbackTruncated = false;
+
     let rows = [...result.data];
     if (input.enabled !== undefined && input.enabled !== null) {
       rows = rows.filter((s) => s["enabled"] === input.enabled);
@@ -87,6 +93,7 @@ export async function searchSequences(input: SearchSequencesInput): Promise<stri
       if (input.enabled !== undefined && input.enabled !== null) {
         filtered = filtered.filter((s) => s["enabled"] === input.enabled);
       }
+      fallbackTruncated = filtered.length > limit;
       rows = filtered;
     }
 
@@ -125,7 +132,7 @@ export async function searchSequences(input: SearchSequencesInput): Promise<stri
         updatedAt: s["updatedAt"],
         profileUrl: profileUrl("sequence", s["id"] as number),
       })),
-      truncated: result.nextCursor !== null,
+      truncated: fallbackTruncated || result.nextCursor !== null,
     };
   });
 }

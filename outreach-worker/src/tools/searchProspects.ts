@@ -106,6 +106,10 @@ export async function searchProspects(input: SearchProspectsInput): Promise<stri
 
     let candidatePages: { data: readonly Record<string, unknown>[]; nextCursor: string | null };
     let userTokens: readonly string[] = [];
+    // COR-05: client-side fallback paths sets nextCursor=null, so the
+    // server-side `nextCursor !== null` truncated signal is structurally
+    // unreachable on that branch. Track fallback truncation separately.
+    let fallbackTruncated = false;
 
     if (input.query !== null && input.query !== undefined && input.query !== "") {
       const q = input.query.trim();
@@ -169,6 +173,10 @@ export async function searchProspects(input: SearchProspectsInput): Promise<stri
       const ranked = Array.from(merged.values())
         .sort((a, b) => b.tokenHits - a.tokenHits)
         .map((e) => e.row);
+      // COR-05: record fallback truncation BEFORE slicing. nextCursor is
+      // null on this path by construction, so the original
+      // `nextCursor !== null` truncated check would never fire.
+      fallbackTruncated = ranked.length > limit;
       candidatePages = { data: ranked.slice(0, limit), nextCursor: null };
     } else {
       candidatePages = await client.list("prospect", {
@@ -225,7 +233,8 @@ export async function searchProspects(input: SearchProspectsInput): Promise<stri
     return {
       prospects,
       totalReturned: prospects.length,
-      truncated: prospects.length >= limit && candidatePages.nextCursor !== null,
+      truncated:
+        fallbackTruncated || (prospects.length >= limit && candidatePages.nextCursor !== null),
       nextCursor: candidatePages.nextCursor,
     };
   });

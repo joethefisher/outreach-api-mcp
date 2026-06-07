@@ -45,6 +45,11 @@ export async function searchTemplates(input: SearchTemplatesInput): Promise<stri
       pageSize: isNonEmpty(input.bodyContains) ? 200 : limit,
     });
 
+    // COR-05: when the wide-fallback path or bodyContains client-side
+    // filter drops matches, the server-side `nextCursor !== null`
+    // signal can't capture that — track explicitly.
+    let fallbackTruncated = false;
+
     if (result.data.length === 0 && isNonEmpty(input.query)) {
       const q = input.query.toLowerCase();
       const wide = await client.list("template", {
@@ -60,6 +65,7 @@ export async function searchTemplates(input: SearchTemplatesInput): Promise<stri
         const subject = ((t["subject"] as string | undefined) ?? "").toLowerCase();
         return name.includes(q) || subject.includes(q);
       });
+      fallbackTruncated = filtered.length > limit;
       result = { data: filtered, nextCursor: null };
     }
 
@@ -71,6 +77,7 @@ export async function searchTemplates(input: SearchTemplatesInput): Promise<stri
         return stripHtml(combined).toLowerCase().includes(needle);
       });
     }
+    if (rows.length > limit) fallbackTruncated = true;
     rows = rows.slice(0, limit);
 
     if (rows.length === 0) {
@@ -113,7 +120,7 @@ export async function searchTemplates(input: SearchTemplatesInput): Promise<stri
         profileUrl: profileUrl("template", t["id"] as number),
         updatedAt: t["updatedAt"],
       })),
-      truncated: result.nextCursor !== null,
+      truncated: fallbackTruncated || result.nextCursor !== null,
     };
   });
 }
