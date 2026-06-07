@@ -192,8 +192,11 @@ export async function draftEmail(input: DraftEmailInput): Promise<string> {
               id: template["id"],
               name: template["name"],
               subject: template["subject"],
-              bodyHtml: template["bodyHtml"],
-              bodyText: template["bodyText"],
+              // DES-04: match getTemplate's 5000-char cap. Long templates
+              // crowd the agent's context window for no benefit — the
+              // model can re-fetch via getTemplate if it needs the rest.
+              bodyHtml: truncateBody(template["bodyHtml"]),
+              bodyText: truncateBody(template["bodyText"]),
             }
           : null,
       customFieldsRelevantToEmail: labelled.customFields ?? {},
@@ -203,4 +206,12 @@ export async function draftEmail(input: DraftEmailInput): Promise<string> {
       ...(unavailableSections.length > 0 && { unavailableSections }),
     };
   });
+}
+
+const MAX_TEMPLATE_BODY = 5000;
+function truncateBody(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return value.length > MAX_TEMPLATE_BODY
+    ? `${value.slice(0, MAX_TEMPLATE_BODY)}\n[...truncated]`
+    : value;
 }
