@@ -10,7 +10,7 @@
 //     with a CSRF-prevention error.
 //   - Loopback redirect only — the caller binds 127.0.0.1, not 0.0.0.0.
 
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
 export interface PkcePair {
@@ -79,7 +79,12 @@ export function parseCallback(
     );
   }
   const state = searchParams.get("state");
-  if (state === null || state !== expectedState) {
+  // SEC-07: timing-safe state comparison. Plain `!==` short-circuits at
+  // the first differing byte, which leaks the matching prefix length to
+  // an attacker who can observe response timing. The states are equal-
+  // length by construction (32-byte base64url) but we length-guard
+  // anyway since timingSafeEqual throws on length mismatch.
+  if (state === null || !constantTimeEquals(state, expectedState)) {
     throw new CallbackError(
       "OAuth callback state mismatch — possible CSRF attempt. Restart the bootstrap.",
     );
@@ -175,6 +180,13 @@ function base64url(buf: Buffer): string {
   return buf.toString("base64url");
 }
 
+function constantTimeEquals(a: string, b: string): boolean {
+  const aBuf = Buffer.from(a, "utf8");
+  const bBuf = Buffer.from(b, "utf8");
+  if (aBuf.length !== bBuf.length) return false;
+  return timingSafeEqual(aBuf, bBuf);
+}
+
 // ─── Loopback callback listener (extracted from the CLI for testability) ───
 
 export interface CallbackPayload {
@@ -233,6 +245,16 @@ export function awaitCallback(
     const addr = server.address();
     const boundPort = addr !== null && typeof addr === "object" ? addr.port : port;
     const url = new URL(req.url ?? "/", `http://127.0.0.1:${String(boundPort)}`);
+    // SEC-07: OAuth authorization-code flow requires the provider to
+    // redirect via 302→GET to the callback. Reject any other method
+    // outright (405) so a stray POST/PUT/DELETE can never inject params
+    // into `parseCallback` and so a tab "preflight" can't accidentally
+    // trip the listener.
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      res.setHeader("Allow", "GET, HEAD");
+      respond(res, 405, "Method Not Allowed");
+      return;
+    }
     if (url.pathname !== callbackPath) {
       respond(res, 404, "Not Found");
       return;

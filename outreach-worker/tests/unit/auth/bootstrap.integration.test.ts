@@ -101,6 +101,48 @@ describe("awaitCallback — loopback OAuth listener", () => {
     expect((err as Error).message).toMatch(/Timed out/);
   });
 
+  it("rejects non-GET methods with 405 + Allow header (SEC-07)", async () => {
+    const handle = await awaitCallback(0, "s", { timeoutMs: 5000 });
+    const response = await fetch(
+      `http://127.0.0.1:${String(handle.port)}/callback?state=s&code=x`,
+      {
+        method: "POST",
+      },
+    );
+    expect(response.status).toBe(405);
+    expect(response.headers.get("Allow")).toBe("GET, HEAD");
+    handle.close();
+    // Result was never resolved because the POST was rejected pre-parse.
+    void reify(handle.result);
+  });
+
+  it("uses constant-time state comparison so a near-match doesn't leak via timing (SEC-07)", async () => {
+    // Behavioral check: a near-prefix state and a wildly different state
+    // both reject with the same error message. We can't measure timing
+    // reliably here, but we CAN assert that timingSafeEqual's
+    // length-guard branch fires for inputs of different length, and that
+    // equal-length-but-different inputs reject cleanly.
+    const handle1 = await awaitCallback(0, "expected-state-32-bytes-aaaaaaaa", { timeoutMs: 5000 });
+    const reified1 = reify(handle1.result);
+    const r1 = await fetch(
+      `http://127.0.0.1:${String(handle1.port)}/callback?state=different-length&code=x`,
+    );
+    expect(r1.status).toBe(400);
+    await expect(reified1).resolves.toMatchObject({
+      message: expect.stringMatching(/state mismatch/) as unknown,
+    });
+
+    const handle2 = await awaitCallback(0, "expected-state-32-bytes-aaaaaaaa", { timeoutMs: 5000 });
+    const reified2 = reify(handle2.result);
+    const r2 = await fetch(
+      `http://127.0.0.1:${String(handle2.port)}/callback?state=expected-state-32-bytes-bbbbbbbb&code=x`,
+    );
+    expect(r2.status).toBe(400);
+    await expect(reified2).resolves.toMatchObject({
+      message: expect.stringMatching(/state mismatch/) as unknown,
+    });
+  });
+
   it("binds only to 127.0.0.1 — reachable on loopback, port assigned ephemerally", async () => {
     const handle = await awaitCallback(0, "s", { timeoutMs: 5000 });
     expect(handle.port).toBeGreaterThan(0);
