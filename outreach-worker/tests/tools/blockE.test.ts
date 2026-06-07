@@ -4,11 +4,7 @@ import { OutreachApiException } from "../../src/api/client.js";
 import { scopeMissing } from "../../src/errors/envelopes.js";
 import { configureLogger } from "../../src/logger.js";
 import { draftEmail } from "../../src/tools/draftEmail.js";
-import {
-  cleanupToolContext,
-  installToolContext,
-  parseSuccess,
-} from "../fixtures/toolHarness.js";
+import { cleanupToolContext, installToolContext, parseSuccess } from "../fixtures/toolHarness.js";
 
 beforeEach(() => {
   configureLogger("error");
