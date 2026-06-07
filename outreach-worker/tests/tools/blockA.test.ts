@@ -112,6 +112,40 @@ describe("Block A — prospects & accounts", () => {
     expect(result.unavailableSections?.some((s) => s.includes("recentMailings"))).toBe(true);
   });
 
+  it("getAccountProfile degrades opportunities when that fetch fails; account + scope still returned (NEW-2)", async () => {
+    const env = await installToolContext({
+      get: {
+        account: { 7: { id: 7, name: "Acme", domain: "acme.com" } },
+      },
+      list: {
+        prospect: [{ id: 1, accountId: 7, firstName: "P1", lastName: "L1" }],
+        sequenceState: [],
+      },
+      count: { mailing: 5 },
+      failOn: {
+        // Opportunities scopeMissing — used to throw because the
+        // Promise.all was bare; now degrades into unavailableSections.
+        list: { opportunity: new OutreachApiException(scopeMissing("opportunities.read")) },
+      },
+    });
+    const raw = await getAccountProfile({ accountId: 7 });
+    const result = parseSuccess(raw) as unknown as {
+      account: { id: number };
+      prospects: { id: number }[];
+      opportunities: unknown[];
+      unavailableSections?: string[];
+    };
+    expect(result.account.id).toBe(7);
+    expect(result.prospects).toHaveLength(1);
+    expect(result.opportunities).toEqual([]);
+    expect(result.unavailableSections).toBeDefined();
+    expect(result.unavailableSections?.some((s) => s.includes("opportunities"))).toBe(true);
+
+    // Counts are still scoped — degradation didn't break the prospect scope.
+    const mailingCall = env.countCalls.find((c) => c.resource === "mailing");
+    expect(mailingCall?.filters?.["prospect"]).toEqual({ __relId: [1] });
+  });
+
   it("getProspectProfile propagates non-domain errors (e.g. TypeError) instead of mislabelling them 'unavailable' (NEW-8)", async () => {
     await installToolContext({
       get: {

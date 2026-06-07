@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { OutreachApiException } from "../../src/api/client.js";
+import { outreachApiError } from "../../src/errors/envelopes.js";
 import { configureLogger } from "../../src/logger.js";
 import { analyzeSequencePerformance } from "../../src/tools/analyzeSequencePerformance.js";
+import { getSequenceProfile } from "../../src/tools/getSequenceProfile.js";
 import { cleanupToolContext, installToolContext, parseSuccess } from "../fixtures/toolHarness.js";
 
 beforeEach(() => {
@@ -107,5 +110,35 @@ describe("Block B — analyzeSequencePerformance", () => {
     expect(result.totals.replied).toBe(1);
     expect(result.rates["openRate"]).toBe(0.5);
     expect(result.rates["replyRate"]).toBe(0.5);
+  });
+});
+
+describe("Block B — getSequenceProfile", () => {
+  it("degrades the enrollment summary on a non-scope failure (5xx) instead of throwing (NEW-2)", async () => {
+    // Pre-NEW-2 the tail allStates try/catch only degraded on scopeMissing —
+    // a transient 5xx made the whole tool throw, despite all the other
+    // sections returning normally. After NEW-2 it degrades via optionalFetch
+    // and the response surfaces enrollment summary as unavailable.
+    await installToolContext({
+      get: {
+        sequence: { 1: { id: 1, name: "Onboarding" } },
+      },
+      list: {
+        sequenceStep: [],
+      },
+      failOn: {
+        list: { sequenceState: new OutreachApiException(outreachApiError(503, "upstream down")) },
+      },
+    });
+    const raw = await getSequenceProfile({ sequenceId: 1 });
+    const result = parseSuccess(raw) as unknown as {
+      sequence: { id: number };
+      enrollmentSummary: { totalEnrolled: number };
+      unavailableSections?: string[];
+    };
+    expect(result.sequence.id).toBe(1);
+    expect(result.enrollmentSummary.totalEnrolled).toBe(0);
+    expect(result.unavailableSections).toBeDefined();
+    expect(result.unavailableSections?.some((s) => s.includes("enrollment summary"))).toBe(true);
   });
 });
