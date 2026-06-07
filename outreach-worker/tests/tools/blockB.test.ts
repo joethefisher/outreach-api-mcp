@@ -121,6 +121,45 @@ describe("Block B — analyzeSequencePerformance", () => {
   });
 });
 
+describe("Block B — analyzeSequencePerformance (COR-09)", () => {
+  it("translates an OutreachApiException on the count pre-flight into tooLarge(-1, true)", async () => {
+    await installToolContext({
+      get: { sequence: { 1: { id: 1, name: "X" } } },
+      failOn: {
+        count: { mailing: new OutreachApiException(outreachApiError(503, "upstream down")) },
+      },
+    });
+    const raw = await analyzeSequencePerformance({
+      sequenceId: 1,
+      dateRangeFrom: "2026-05-01",
+      dateRangeTo: "2026-05-31",
+    });
+    const env = parseEnvelope(raw);
+    expect(env.error).toBe("tooLarge");
+    expect(env["count"]).toBe(-1);
+  });
+
+  it("propagates a programmer error from the count pre-flight rather than mislabelling it tooLarge", async () => {
+    await installToolContext({
+      get: { sequence: { 1: { id: 1, name: "X" } } },
+      failOn: {
+        count: { mailing: new TypeError("undefined is not iterable") },
+      },
+    });
+    const raw = await analyzeSequencePerformance({
+      sequenceId: 1,
+      dateRangeFrom: "2026-05-01",
+      dateRangeTo: "2026-05-31",
+    });
+    const env = parseEnvelope(raw);
+    // runTool's exceptionToEnvelope wraps non-domain errors as a generic
+    // outreachApiError with status=0 — a real failure, NOT tooLarge.
+    expect(env.error).toBe("outreachApiError");
+    const detail = env["detail"];
+    expect(typeof detail === "string" ? detail : "").toContain("undefined is not iterable");
+  });
+});
+
 describe("Block B — searchSequences", () => {
   it("routes name + shareType filters server-side and computes activeProspectCount client-side", async () => {
     const client = await installToolContext({
