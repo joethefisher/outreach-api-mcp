@@ -69,17 +69,20 @@ function emit(level: LogLevel, msg: string, ctx: Readonly<Record<string, unknown
 // Sensitive keys redacted automatically. Covers OAuth credentials, bearer
 // tokens, PKCE artifacts, and personally-identifying Outreach fields. Adding
 // a new sensitive key is part of the PR that introduces it.
+//
+// SEC-02: bare generic names (`state`, `code`, `token`, `bearer`) were
+// previously here as defense-in-depth, but they over-redact normal Outreach
+// payloads — `sequenceState.state: "active"`, `country.code: "US"`, an audit
+// field named `token`. The value scrubbers below still catch the actual
+// secret shapes (Bearer headers, JWTs, OAuth/PKCE form fields), so we keep
+// only OAuth-specific keys here.
 const REDACT_KEYS: ReadonlySet<string> = new Set([
   "access_token",
   "refresh_token",
   "client_secret",
   "authorization",
   "Authorization",
-  "code",
   "code_verifier",
-  "state",
-  "token",
-  "bearer",
   "emails",
   "phoneNumbers",
   "bodyHtml",

@@ -69,11 +69,7 @@ describe("redact", () => {
       refresh_token: "secret",
       client_secret: "secret",
       Authorization: "Bearer secret",
-      code: "abc",
       code_verifier: "v",
-      state: "s",
-      token: "t",
-      bearer: "b",
       emails: ["a@b.c"],
       phoneNumbers: ["555"],
       bodyHtml: "<p>x</p>",
@@ -86,11 +82,7 @@ describe("redact", () => {
       "refresh_token",
       "client_secret",
       "Authorization",
-      "code",
       "code_verifier",
-      "state",
-      "token",
-      "bearer",
       "emails",
       "phoneNumbers",
       "bodyHtml",
@@ -100,18 +92,36 @@ describe("redact", () => {
     }
   });
 
+  it("does not over-redact benign properties at generic key names (SEC-02)", () => {
+    // `state`, `code`, `token`, `bearer` are common Outreach field names —
+    // sequenceState.state, country.code, an audit field literally called
+    // `token`. They were previously in REDACT_KEYS and caused false positives.
+    // Value-shape scrubbers (Bearer / JWT / OAuth form) still cover the
+    // actual secret shapes regardless of key.
+    const out = redact({
+      state: "active",
+      code: "US",
+      token: "csrf-1",
+      bearer: "primary",
+    }) as Record<string, unknown>;
+    expect(out["state"]).toBe("active");
+    expect(out["code"]).toBe("US");
+    expect(out["token"]).toBe("csrf-1");
+    expect(out["bearer"]).toBe("primary");
+  });
+
   it("recurses into nested objects and arrays", () => {
     const out = redact({
       outer: {
         access_token: "x",
         inner: { refresh_token: "y", keep: 1 },
       },
-      list: [{ code: "1", keep: "ok" }],
+      list: [{ access_token: "1", keep: "ok" }],
     });
     expect(out.outer.access_token).toBe("[REDACTED]");
     expect(out.outer.inner.refresh_token).toBe("[REDACTED]");
     expect(out.outer.inner.keep).toBe(1);
-    expect(out.list[0]!.code).toBe("[REDACTED]");
+    expect(out.list[0]!.access_token).toBe("[REDACTED]");
     expect(out.list[0]!.keep).toBe("ok");
   });
 
