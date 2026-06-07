@@ -14,6 +14,8 @@
 
 import type { OutreachClient } from "../api/client.js";
 
+import { paginateList } from "./_helpers.js";
+
 export interface NamedMatch {
   readonly id: number;
   readonly label: string;
@@ -45,13 +47,17 @@ export async function resolveAccountByName(
         : { id: a.id, label: a.name },
     );
   }
-  const broad = await client.list<{
+  // COR-07: paginate the substring scan instead of capping at one
+  // 200-row page. Up to 10 pages × 200 = 2000 accounts considered before
+  // we give up — far above any reasonable org size.
+  const broad = await paginateList<{
     id: number;
     name: string;
     domain?: string;
-  }>("account", {
+  }>(client, "account", {
     fields: { account: ["name", "domain"] },
     pageSize: 200,
+    maxPages: 10,
   });
   const lower = trimmed.toLowerCase();
   return broad.data
@@ -71,16 +77,21 @@ export async function resolveUserByName(
 ): Promise<readonly NamedMatch[]> {
   const trimmed = query.trim().toLowerCase();
   if (trimmed === "") return [];
-  const broad = await client.list<{
+  // COR-07: paginate the user scan. Pre-fix the 500-row cap meant orgs
+  // with seat counts above 500 lost rep lookups beyond the first page —
+  // searchProspects(ownerName=…) would return noResults for a real
+  // person. Up to 10 pages × 500 = 5000 users.
+  const broad = await paginateList<{
     id: number;
     firstName?: string;
     lastName?: string;
     email?: string;
     title?: string;
     locked?: boolean;
-  }>("user", {
+  }>(client, "user", {
     fields: { user: ["firstName", "lastName", "email", "title", "locked"] },
     pageSize: 500,
+    maxPages: 10,
   });
   return broad.data
     .filter((u) => {
@@ -105,9 +116,13 @@ export async function resolveStageByName(
 ): Promise<readonly NamedMatch[]> {
   const trimmed = name.trim();
   if (trimmed === "") return [];
-  const all = await client.list<{ id: number; name: string }>("stage", {
+  // COR-07: paginate stage scan. Orgs with deep custom-stage taxonomies
+  // (more than 500 stages across pipelines) previously lost matches
+  // beyond the first page.
+  const all = await paginateList<{ id: number; name: string }>(client, "stage", {
     fields: { stage: ["name"] },
     pageSize: 500,
+    maxPages: 5,
   });
   const lower = trimmed.toLowerCase();
   return all.data
