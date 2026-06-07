@@ -1,6 +1,6 @@
 {
   "name": "outreach-api-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Independent MCP server for the Outreach v2 REST API — prospects, accounts, sequences, templates, snippets, tasks, mailings, audit logs.",
   "type": "module",
   "main": "dist/index.js",
