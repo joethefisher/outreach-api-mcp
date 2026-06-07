@@ -4,6 +4,12 @@
 //   - Parent directory created with mode 0o700 (owner only).
 //   - Cache file written with mode 0o600 (owner read/write only).
 //   - Writes are atomic: temp file in the same directory, fsync, rename.
+//   - SEC-03: post-write fstat — re-open the cache file after rename and
+//     verify (mode & 0o777) === 0o600. Throw `TokenCachePermissionError`
+//     on mismatch. This is the documented §2.3 control; without it a
+//     filesystem that silently ignores mode bits would let a long-lived
+//     refresh token land world-readable and the write would still
+//     "succeed."
 //   - Malformed JSON returns null (the caller falls back to env seed or
 //     surfaces OAuthNotInitialized — never crash on corruption).
 //
@@ -28,6 +34,19 @@ export interface TokenCacheData {
 export interface TokenCache {
   read(): Promise<TokenCacheData | null>;
   write(data: TokenCacheData): Promise<void>;
+}
+
+/** SEC-03: thrown when a post-write fstat sees mode bits other than 0o600. */
+export class TokenCachePermissionError extends Error {
+  constructor(
+    public readonly path: string,
+    public readonly mode: number,
+  ) {
+    super(
+      `Token cache at ${path} has mode 0o${(mode & 0o777).toString(8).padStart(3, "0")} after write; expected 0o600. Refusing to leave credentials at unsafe permissions.`,
+    );
+    this.name = "TokenCachePermissionError";
+  }
 }
 
 export class FileTokenCache implements TokenCache {
@@ -84,6 +103,21 @@ export class FileTokenCache implements TokenCache {
     // mode (0o600). Defensively chmod after rename in case of overlay FS quirks.
     await fs.rename(tmp, this.path);
     await fs.chmod(this.path, 0o600);
+
+    // SEC-03: re-open and fstat to verify the final on-disk mode bits.
+    // chmod() can be silently ignored by certain filesystems (NTFS via
+    // some bridges, some overlay FS layers, network mounts). Without
+    // this check the documented §2.3 "0600 verified" claim is false and
+    // a long-lived refresh token can land world-readable.
+    const verifyHandle = await fs.open(this.path, "r");
+    try {
+      const stat = await verifyHandle.stat();
+      if ((stat.mode & 0o777) !== 0o600) {
+        throw new TokenCachePermissionError(this.path, stat.mode);
+      }
+    } finally {
+      await verifyHandle.close();
+    }
   }
 }
 
