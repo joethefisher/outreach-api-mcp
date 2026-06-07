@@ -13,7 +13,12 @@
 
 import { getOutreachClient, OutreachApiException, type OutreachClient } from "../api/client.js";
 import { AuthError } from "../auth/index.js";
-import { isErrorEnvelope, type ErrorEnvelope } from "../errors/envelopes.js";
+import {
+  isErrorEnvelope,
+  validationError,
+  type ErrorEnvelope,
+  type ValidationError,
+} from "../errors/envelopes.js";
 import { logger, redact } from "../logger.js";
 import { type CustomFieldSchemaCache, getSchemaCache } from "../schema/customFields.js";
 
@@ -141,6 +146,69 @@ const URL_PATH_PLURALS: Readonly<Record<string, string>> = {
 export function profileUrl(resourceType: string, id: number | string): string {
   const path = URL_PATH_PLURALS[resourceType] ?? `${resourceType}s`;
   return `https://web.outreach.io/${path}/${String(id)}`;
+}
+
+// ─── Date range validation (COR-08) ──────────────────────────────────────
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+export interface ValidatedDateRange {
+  readonly from: string | null;
+  readonly to: string | null;
+}
+
+export type DateRangeValidationResult =
+  | { readonly ok: true; readonly range: ValidatedDateRange }
+  | { readonly ok: false; readonly envelope: ValidationError };
+
+/**
+ * Validate optional `dateRangeFrom` / `dateRangeTo` inputs. Each is allowed
+ * to be missing (returned as `null`); when present, it must match
+ * `YYYY-MM-DD`. When both are present, `from` must be on or before `to`.
+ *
+ * Returns a `validationError` envelope on any failure so the caller can
+ * surface a precise message without `new Date()` ever touching unvalidated
+ * input. Callers apply their own defaults to a missing side (e.g. `from =
+ * range.from ?? daysAgoISO(30)`).
+ */
+export function validateDateRange(
+  from: string | null | undefined,
+  to: string | null | undefined,
+): DateRangeValidationResult {
+  const f = from !== null && from !== undefined && from !== "" ? from : null;
+  const t = to !== null && to !== undefined && to !== "" ? to : null;
+  if (f !== null) {
+    const err = checkIsoDate(f, "dateRangeFrom");
+    if (err !== null) return { ok: false, envelope: err };
+  }
+  if (t !== null) {
+    const err = checkIsoDate(t, "dateRangeTo");
+    if (err !== null) return { ok: false, envelope: err };
+  }
+  if (f !== null && t !== null && f > t) {
+    return {
+      ok: false,
+      envelope: validationError(`dateRangeFrom (${f}) must be on or before dateRangeTo (${t}).`),
+    };
+  }
+  return { ok: true, range: { from: f, to: t } };
+}
+
+function checkIsoDate(value: string, field: string): ValidationError | null {
+  if (!ISO_DATE_RE.test(value)) {
+    return validationError(
+      `${field} must be an ISO date in YYYY-MM-DD form. Got: "${value}".`,
+      field,
+    );
+  }
+  // Round-trip catches calendar invalids the regex passes (e.g. 2026-13-01,
+  // 2026-02-30): Date.parse normalizes them to a different day, so the
+  // re-serialized prefix won't match the input.
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+    return validationError(`${field} is not a real calendar date: "${value}".`, field);
+  }
+  return null;
 }
 
 /**

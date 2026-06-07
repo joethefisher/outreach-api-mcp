@@ -4,7 +4,7 @@ import { OutreachApiException } from "../api/client.js";
 import { range, relId, type FilterMap } from "../api/filters.js";
 import { tooLarge } from "../errors/envelopes.js";
 
-import { daysAgoISO, profileUrl, runTool, todayISO } from "./_helpers.js";
+import { daysAgoISO, profileUrl, runTool, todayISO, validateDateRange } from "./_helpers.js";
 
 export interface GetRecentMailingsInput {
   readonly dateRangeFrom?: string | null;
@@ -20,8 +20,10 @@ const MAX_RECORDS = 5000;
 
 export async function getRecentMailings(input: GetRecentMailingsInput): Promise<string> {
   return runTool("getRecentMailings", input, async ({ client }) => {
-    const from = isNonEmpty(input.dateRangeFrom) ? input.dateRangeFrom : daysAgoISO(1);
-    const to = isNonEmpty(input.dateRangeTo) ? input.dateRangeTo : todayISO();
+    const dateValidation = validateDateRange(input.dateRangeFrom, input.dateRangeTo);
+    if (!dateValidation.ok) return dateValidation.envelope;
+    const from = dateValidation.range.from ?? daysAgoISO(1);
+    const to = dateValidation.range.to ?? todayISO();
     const limit = clamp(input.limit ?? 50, 1, 200);
 
     const filters: Record<string, unknown> = {
