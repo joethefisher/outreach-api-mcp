@@ -2,7 +2,7 @@
 
 import { range, relId } from "../api/filters.js";
 
-import { daysAgoISO, profileUrl, runTool } from "./_helpers.js";
+import { daysAgoISO, optionalFetch, profileUrl, runTool } from "./_helpers.js";
 
 export interface GetProspectProfileInput {
   readonly prospectId: number;
@@ -29,17 +29,13 @@ export async function getProspectProfile(input: GetProspectProfileInput): Promis
     };
     const emptyPagePromise = Promise.resolve(emptyPage);
 
-    // AVL-03: each optional section is wrapped so one scopeMissing / 5xx /
-    // timeout doesn't tank the whole tool. Failures accumulate into
-    // unavailableSections; the core prospect fetch stays hard (the tool has
-    // no meaningful response without it).
+    // AVL-03 / NEW-8: each optional section is wrapped via the shared
+    // `optionalFetch` helper. Domain failures (OutreachApiException,
+    // AuthError) degrade into `unavailableSections`; programmer mistakes
+    // propagate. The core prospect fetch stays hard.
     const unavailableSections: string[] = [];
     const optional = <T>(p: Promise<T>, label: string, fallback: T): Promise<T> =>
-      p.catch((e: unknown) => {
-        const reason = e instanceof Error ? e.message : String(e);
-        unavailableSections.push(`${label}: ${reason}`);
-        return fallback;
-      });
+      optionalFetch(p, label, fallback, unavailableSections);
 
     const [prospect, sequenceStates, mailings, calls, tasks, opportunities] = await Promise.all([
       client.get("prospect", id, {
