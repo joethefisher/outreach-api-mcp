@@ -8,7 +8,7 @@
 import { OutreachApiException } from "../api/client.js";
 import { relId } from "../api/filters.js";
 
-import { profileUrl, runTool } from "./_helpers.js";
+import { optionalFetch, profileUrl, runTool } from "./_helpers.js";
 
 export interface GetSequenceProfileInput {
   readonly sequenceId: number;
@@ -148,29 +148,27 @@ export async function getSequenceProfile(input: GetSequenceProfileInput): Promis
       }
     }
 
-    // AVL-03: enrollment summary fetch was previously unwrapped; one
-    // scopeMissing on sequenceStates would tank the whole tool. Degrade
-    // into an empty summary + an entry in unavailableSections instead.
+    // AVL-03 / NEW-2: enrollment summary degrades on ANY domain failure
+    // (scopeMissing, outreachApiError, timeout) into an empty summary +
+    // entry in unavailableSections. Previously the catch only degraded on
+    // scopeMissing, so a transient 5xx or a Retry-After cap would tank the
+    // whole tool — inconsistent with the other composing tools.
     const summary: Record<string, number> = {};
     for (const s of SUMMARY_STATES) summary[s] = 0;
-    try {
-      const allStates = await client.list<{ state: string; sequenceId: number }>("sequenceState", {
+    const allStates = await optionalFetch(
+      client.list<{ state: string; sequenceId: number }>("sequenceState", {
         filters: { sequence: relId(id) },
         fields: { sequenceState: ["state"] },
         pageSize: 1000,
-      });
-      for (const s of allStates.data) {
-        summary[s.state] = (summary[s.state] ?? 0) + 1;
-      }
-      summary["totalEnrolled"] = allStates.data.length;
-    } catch (e) {
-      if (isScopeMissing(e)) {
-        unavailableSections.push("enrollment summary (requires sequenceStates.read scope)");
-        summary["totalEnrolled"] = 0;
-      } else {
-        throw e;
-      }
+      }),
+      "enrollment summary",
+      { data: [] as readonly { state: string; sequenceId: number }[], nextCursor: null },
+      unavailableSections,
+    );
+    for (const s of allStates.data) {
+      summary[s.state] = (summary[s.state] ?? 0) + 1;
     }
+    summary["totalEnrolled"] = allStates.data.length;
 
     return {
       sequence: {
