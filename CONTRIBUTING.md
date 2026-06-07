@@ -48,7 +48,6 @@ outreach-worker/
 ## What needs work (good first PRs)
 
 - **Per-tool unit tests.** `tests/tools/` has block-level integration tests for Block A, Block D, and the escape hatches. Blocks B (sequences), C (templates/snippets), and E (drafting) need similar coverage. Once the `tools/` block is well-covered, add it to the threshold-enforced set in `vitest.config.ts`.
-- **Live-API smoke script.** `package.json` declares `npm run smoke:live` but the script file isn't yet present (`scripts/smoke-live.ts`). A useful version would hit `listUsers()` end-to-end as a "your token is healthy" check.
 - **Sub-account / multi-tenant support.** v0.1 assumes one Outreach workspace per server instance. A multi-tenant configuration would need cache-key segmentation.
 - **OAuth scope subsets.** Today the bootstrap requests all 19 read scopes. Letting users request a narrower subset (and having tools surface `scopeMissing` accordingly) would shrink the privilege footprint for read-only-of-one-thing use cases.
 
