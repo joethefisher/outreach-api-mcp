@@ -227,4 +227,25 @@ describe("redact — circular-reference guard (SEC-06)", () => {
     expect(Array.isArray(out)).toBe(true);
     expect(out[0]).toBe("[Circular]");
   });
+
+  it("renders shared acyclic references twice, not as [Circular] (NEW-6)", () => {
+    // Two siblings pointing at the same object is NOT a cycle; the prior
+    // implementation marked the second occurrence as "[Circular]" because
+    // it tracked every visited node instead of the current path. The
+    // fixed guard delete-on-return so `seen` represents only the active
+    // call stack.
+    const shared = { name: "Acme", id: 42 };
+    const out = redact({ owner: shared, buyer: shared });
+    expect(out.owner).toEqual({ name: "Acme", id: 42 });
+    expect(out.buyer).toEqual({ name: "Acme", id: 42 });
+    expect(out.buyer).not.toBe("[Circular]");
+  });
+
+  it("handles a diamond DAG without false [Circular] (NEW-6)", () => {
+    const leaf = { value: "x" };
+    const mid = { left: leaf, right: leaf };
+    const out = redact({ root: mid });
+    expect(out.root.left).toEqual({ value: "x" });
+    expect(out.root.right).toEqual({ value: "x" });
+  });
 });
