@@ -142,3 +142,33 @@ export function profileUrl(resourceType: string, id: number | string): string {
   const path = URL_PATH_PLURALS[resourceType] ?? `${resourceType}s`;
   return `https://web.outreach.io/${path}/${String(id)}`;
 }
+
+/**
+ * Wrap an optional sub-fetch so it degrades into the caller's
+ * `unavailableSections` instead of collapsing the whole composing tool when
+ * the upstream throws (`scopeMissing`, `outreachApiError`, `tokenInvalid`,
+ * `timeout`, etc.).
+ *
+ * Only degrades on **domain** failures — `OutreachApiException` and
+ * `AuthError`. Programmer mistakes (a `TypeError` in the call setup, a
+ * `RangeError`, a fixture wiring bug in tests) MUST propagate so they are
+ * visible as bugs rather than silently mislabelled "section unavailable"
+ * (NEW-8). Mirrors the discrimination `getSequenceProfile` already uses on
+ * its inner try/catch blocks.
+ */
+export function optionalFetch<T>(
+  fetch: Promise<T>,
+  label: string,
+  fallback: T,
+  unavailableSections: string[],
+): Promise<T> {
+  return fetch.catch((e: unknown) => {
+    if (e instanceof OutreachApiException || e instanceof AuthError) {
+      const reason = e.envelope.message;
+      unavailableSections.push(`${label}: ${reason}`);
+      return fallback;
+    }
+    // Not a domain error — surface it so the caller can see the bug.
+    throw e;
+  });
+}
