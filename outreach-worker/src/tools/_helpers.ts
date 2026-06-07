@@ -12,6 +12,7 @@
 // MCP server forwards as text content to the agent.
 
 import { getOutreachClient, OutreachApiException, type OutreachClient } from "../api/client.js";
+import type { FilterMap } from "../api/filters.js";
 import { AuthError } from "../auth/index.js";
 import {
   isErrorEnvelope,
@@ -209,6 +210,57 @@ function checkIsoDate(value: string, field: string): ValidationError | null {
     return validationError(`${field} is not a real calendar date: "${value}".`, field);
   }
   return null;
+}
+
+/**
+ * Paginate `client.list` across multiple pages with a hard cap on pages
+ * walked. Returns concatenated data + a `truncated` flag set when the
+ * upstream had more pages but we stopped at the cap (COR-07).
+ *
+ * Tools that need "all of X up to a sane ceiling" (roster, resolver scans)
+ * use this instead of a single 500/1000-row call that silently caps.
+ */
+export interface PaginateListOptions {
+  readonly filters?: FilterMap;
+  readonly includes?: readonly string[];
+  readonly fields?: Record<string, readonly string[]>;
+  readonly flatten?: Record<string, readonly string[]>;
+  readonly pageSize?: number;
+  readonly sort?: string;
+  readonly maxPages?: number;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters -- T is specified at the call site (resolver-shape vs roster-shape) and propagates into the returned readonly T[]; the rule misses cross-call-site inference benefit.
+export async function paginateList<T extends Record<string, unknown>>(
+  client: OutreachClient,
+  resource: string,
+  options: PaginateListOptions,
+): Promise<{ readonly data: readonly T[]; readonly truncated: boolean }> {
+  const maxPages = options.maxPages ?? 10;
+  const data: T[] = [];
+  let cursor: string | null | undefined;
+  let pages = 0;
+  let truncated = false;
+  for (;;) {
+    if (pages >= maxPages) {
+      truncated = true;
+      break;
+    }
+    const page = await client.list<T>(resource, {
+      ...(options.filters !== undefined && { filters: options.filters }),
+      ...(options.includes !== undefined && { includes: options.includes }),
+      ...(options.fields !== undefined && { fields: options.fields }),
+      ...(options.flatten !== undefined && { flatten: options.flatten }),
+      ...(options.pageSize !== undefined && { pageSize: options.pageSize }),
+      ...(options.sort !== undefined && { sort: options.sort }),
+      ...(cursor !== null && cursor !== undefined && cursor !== "" && { cursor }),
+    });
+    data.push(...page.data);
+    pages++;
+    if (page.nextCursor === null) break;
+    cursor = page.nextCursor;
+  }
+  return { data, truncated };
 }
 
 /**
