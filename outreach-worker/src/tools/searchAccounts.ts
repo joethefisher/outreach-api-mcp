@@ -74,6 +74,9 @@ export async function searchAccounts(input: SearchAccountsInput): Promise<string
       pageSize: limit,
     });
 
+    // COR-05: see comment on the wide-fallback branch below.
+    let fallbackTruncated = false;
+
     if (result.data.length === 0 && isNonEmpty(input.query)) {
       const q = input.query.toLowerCase();
       const wideFilters: Record<string, unknown> = {};
@@ -96,6 +99,11 @@ export async function searchAccounts(input: SearchAccountsInput): Promise<string
         const domain = ((a["domain"] as string | undefined) ?? "").toLowerCase();
         return name.includes(q) || nat.includes(q) || domain.includes(q);
       });
+      // COR-05: nextCursor is null on this branch by construction, so the
+      // server-side truncated signal below would always read false even
+      // when the client-side fallback dropped matches. Record pre-slice
+      // overflow as fallbackTruncated.
+      fallbackTruncated = filtered.length > limit;
       result = { data: filtered.slice(0, limit), nextCursor: null };
     }
 
@@ -131,7 +139,7 @@ export async function searchAccounts(input: SearchAccountsInput): Promise<string
 
     return {
       accounts,
-      truncated: result.nextCursor !== null,
+      truncated: fallbackTruncated || result.nextCursor !== null,
       nextCursor: result.nextCursor,
     };
   });

@@ -69,6 +69,35 @@ describe("Block C — templates & snippets", () => {
     expect(tplCall?.options?.filters).toMatchObject({ name: "Welcome" });
   });
 
+  it("searchTemplates flags truncated=true on the client-side fallback when matches were dropped (COR-05)", async () => {
+    // Wide-fallback path: 7 templates whose names contain "Outbound", limit=3.
+    // Pre-fix `truncated` was always false on this path because nextCursor=null.
+    // Post-fix it reflects that 4 matches were dropped client-side.
+    const wide = Array.from({ length: 7 }, (_, i) => ({
+      id: i + 1,
+      name: `Outbound ${String(i)}`,
+      subject: "X",
+      bodyText: "x",
+      bodyHtml: "",
+      archived: false,
+      ownerId: 5,
+      ownerFirstName: "A",
+      ownerLastName: "B",
+      updatedAt: "2026-05-10T00:00:00Z",
+    }));
+    await installToolContext({ list: { template: wide } });
+    // Query "Outbound" exact-matches nothing seeded under name="Outbound" — the
+    // exact-name filter returns 0, triggers the wide fallback which substring-
+    // matches all 7. Limit=3, so 4 should be reported as dropped.
+    const raw = await searchTemplates({ query: "Outbound", limit: 3 });
+    const result = parseSuccess(raw) as unknown as {
+      templates: { id: number }[];
+      truncated: boolean;
+    };
+    expect(result.templates).toHaveLength(3);
+    expect(result.truncated).toBe(true);
+  });
+
   it("searchTemplates falls back to client-side bodyContains filter (COR-05 territory)", async () => {
     await installToolContext({
       list: {
