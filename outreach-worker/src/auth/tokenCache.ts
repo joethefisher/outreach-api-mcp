@@ -16,7 +16,8 @@
 // The cache is the source of truth at runtime. The env `OUTREACH_REFRESH_TOKEN`
 // is only consulted as a seed when the cache is empty (first run).
 
-import { promises as fs } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { constants as fsConstants, promises as fs } from "node:fs";
 import { dirname } from "node:path";
 
 import { logger } from "../logger.js";
@@ -91,25 +92,38 @@ export class FileTokenCache implements TokenCache {
       });
     }
 
-    const tmp = `${this.path}.${String(process.pid)}.tmp`;
-    const handle = await fs.open(tmp, "w", 0o600);
+    // SEC-04: random hex suffix instead of a predictable `${pid}` makes
+    // it infeasible for a local attacker with directory write access to
+    // pre-create a symlink at the exact temp path. Combined with
+    // O_CREAT|O_EXCL|O_NOFOLLOW below, this closes the TOCTOU window.
+    const tmp = `${this.path}.${randomBytes(8).toString("hex")}.tmp`;
+    const handle = await fs.open(
+      tmp,
+      // SEC-04: refuse to follow symlinks on the temp open, fail if it
+      // already exists (no pre-place attack), open write-only.
+      fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW,
+      0o600,
+    );
     try {
       await handle.writeFile(`${JSON.stringify(data, null, 2)}\n`, "utf8");
       await handle.sync();
+      // SEC-04: fchmod on the file descriptor rather than path-based
+      // chmod — the path can be raced after rename, the fd cannot.
+      await handle.chmod(0o600);
     } finally {
       await handle.close();
     }
     // rename is atomic on POSIX. On macOS/Linux it preserves the source's
-    // mode (0o600). Defensively chmod after rename in case of overlay FS quirks.
+    // mode (0o600).
     await fs.rename(tmp, this.path);
-    await fs.chmod(this.path, 0o600);
 
-    // SEC-03: re-open and fstat to verify the final on-disk mode bits.
-    // chmod() can be silently ignored by certain filesystems (NTFS via
-    // some bridges, some overlay FS layers, network mounts). Without
-    // this check the documented §2.3 "0600 verified" claim is false and
-    // a long-lived refresh token can land world-readable.
-    const verifyHandle = await fs.open(this.path, "r");
+    // SEC-03 + SEC-04: re-open with O_NOFOLLOW and fstat. We refuse to
+    // follow a symlink at the final path (in case one was swapped in
+    // post-rename) and read the mode directly off the fd so the mode
+    // check can't be raced. Combined, this turns the previously
+    // documented-only "fstat-verified 0600" property into something that
+    // actually holds under filesystem quirks and local-attacker race.
+    const verifyHandle = await fs.open(this.path, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
     try {
       const stat = await verifyHandle.stat();
       if ((stat.mode & 0o777) !== 0o600) {
