@@ -72,6 +72,22 @@ describe("Block D — activity, tasks, audit", () => {
     expect(parseEnvelope(raw).error).toBe("validationError");
   });
 
+  it("getAuditLog rejects a malformed dateRangeFrom with validationError (COR-08)", async () => {
+    await installToolContext();
+    const raw = await getAuditLog({ dateRangeFrom: "last week", dateRangeTo: "2026-01-01" });
+    const env = parseEnvelope(raw);
+    expect(env.error).toBe("validationError");
+    expect(env["pointer"]).toBe("dateRangeFrom");
+  });
+
+  it("getAuditLog rejects from > to with validationError (COR-08)", async () => {
+    await installToolContext();
+    const raw = await getAuditLog({ dateRangeFrom: "2026-03-01", dateRangeTo: "2026-02-15" });
+    const env = parseEnvelope(raw);
+    expect(env.error).toBe("validationError");
+    expect(env.message).toContain("on or before");
+  });
+
   it("getAuditLog filters to the date range, excluding entries outside it (COR-01)", async () => {
     await installToolContext({
       list: {
