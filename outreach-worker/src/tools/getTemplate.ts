@@ -1,8 +1,9 @@
 // getTemplate — full template content + sequence usage list.
 
-import { profileUrl, runTool } from "./_helpers.js";
 import { OutreachApiException } from "../api/client.js";
 import { relId } from "../api/filters.js";
+
+import { profileUrl, runTool } from "./_helpers.js";
 
 export interface GetTemplateInput {
   readonly templateId: number;

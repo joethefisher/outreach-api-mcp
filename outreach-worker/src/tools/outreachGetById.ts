@@ -1,5 +1,7 @@
 // Tier-2 escape hatch — generic by-ID lookup for any read-only resource.
 
+import { invalidResource, validationError } from "../errors/envelopes.js";
+
 import { profileUrl, runTool } from "./_helpers.js";
 import {
   ESSENTIAL_FIELDS,
@@ -7,7 +9,6 @@ import {
   READ_ONLY_RESOURCES,
   type AllowedResource,
 } from "./allowlist.js";
-import { invalidResource, validationError } from "../errors/envelopes.js";
 
 export interface OutreachGetByIdInput {
   readonly resource: string;

@@ -5,10 +5,11 @@
 // scope is missing, mailing counts return null and the response surfaces a
 // clear note rather than silently reporting workspace-wide numbers.
 
-import { daysAgoISO, runTool, todayISO } from "./_helpers.js";
-import { resolveUserByName } from "./_resolvers.js";
 import { range, relId, type FilterMap } from "../api/filters.js";
 import { ambiguousMatch, noResults } from "../errors/envelopes.js";
+
+import { daysAgoISO, runTool, todayISO } from "./_helpers.js";
+import { resolveUserByName } from "./_resolvers.js";
 
 export interface GetUserActivityInput {
   readonly userId?: number | null;

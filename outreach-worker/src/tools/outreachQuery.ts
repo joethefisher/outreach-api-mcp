@@ -4,6 +4,9 @@
 // (essential fieldset, page size 50), and returns the normalized page plus
 // the next cursor. The agent prompt advises calling capability tools first.
 
+import type { FilterMap } from "../api/filters.js";
+import { invalidResource, validationError } from "../errors/envelopes.js";
+
 import { profileUrl, runTool } from "./_helpers.js";
 import {
   ESSENTIAL_FIELDS,
@@ -11,8 +14,6 @@ import {
   READ_ONLY_RESOURCES,
   type AllowedResource,
 } from "./allowlist.js";
-import type { FilterMap } from "../api/filters.js";
-import { invalidResource, validationError } from "../errors/envelopes.js";
 
 export interface OutreachQueryInput {
   readonly resource: string;

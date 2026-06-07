@@ -11,6 +11,7 @@
 // this module also takes care not to include token material in any log call.
 
 import { logger } from "../logger.js";
+
 import type { TokenCache } from "./tokenCache.js";
 
 const ACCESS_TOKEN_REFRESH_BUFFER_SECONDS = 60;

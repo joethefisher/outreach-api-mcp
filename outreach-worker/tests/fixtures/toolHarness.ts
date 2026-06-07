@@ -1,8 +1,9 @@
 // Tool-test harness — injects a StubOutreachClient + loaded schema cache.
 
-import { StubOutreachClient, type StubData } from "./stubOutreachClient.js";
 import { CustomFieldSchemaCache } from "../../src/schema/customFields.js";
 import { resetToolContext, setToolContext } from "../../src/tools/_helpers.js";
+
+import { StubOutreachClient, type StubData } from "./stubOutreachClient.js";
 
 export async function installToolContext(data: StubData = {}): Promise<StubOutreachClient> {
   const client = new StubOutreachClient(data);

@@ -1,8 +1,9 @@
 // getAccountProfile — full account view with prospects, opportunities, recent activity.
 
-import { daysAgoISO, profileUrl, runTool } from "./_helpers.js";
-import type { OutreachClient } from "../api/client.js";
+import type { ListResult, OutreachClient } from "../api/client.js";
 import { range, relId, type FilterMap } from "../api/filters.js";
+
+import { daysAgoISO, profileUrl, runTool } from "./_helpers.js";
 
 export interface GetAccountProfileInput {
   readonly accountId: number;
@@ -10,6 +11,15 @@ export interface GetAccountProfileInput {
   readonly includeOpportunities?: boolean | null;
   readonly includeRecentActivity?: boolean | null;
 }
+
+/**
+ * Cap on the prospect-ID scope set used to filter activity counts. Sized
+ * generously for the typical "named account" (a few hundred prospects at
+ * most). When the cap is hit, `recentActivity.truncated` is set so the
+ * agent can tell the user the counts are a lower bound, not a total.
+ */
+const MAX_SCOPE_PROSPECTS = 500;
+const SCOPE_PAGE_SIZE = 200;
 
 export async function getAccountProfile(input: GetAccountProfileInput): Promise<string> {
   return runTool("getAccountProfile", input, async ({ client, schema }) => {
@@ -46,13 +56,14 @@ export async function getAccountProfile(input: GetAccountProfileInput): Promise<
 
     const labelled = schema.applyLabelsTo("account", { ...account });
 
-    // Phase 1: prospects + opportunities scoped to this account.
+    // NEW-1: scope source is ALWAYS the dedicated paginated ID-only fetch,
+    // independent of `includeProspects`. This guarantees the same counts
+    // regardless of whether the caller asked for the rich prospect list, and
+    // gives us a real truncation signal when the cap is hit.
     //
-    // The activity counts in phase 2 need this account's prospect IDs to
-    // scope correctly (COR-02); none of mailing/task/call/sequenceState has
-    // a direct account relationship — they all go via prospect. Even when
-    // includeProspects=false we still fetch the IDs so the counts are scoped.
-    const [prospects, opportunities, prospectsForScope] = await Promise.all([
+    // The rich prospect list (top-50-by-engagement) is a separate concern,
+    // fetched in parallel only when the caller asked for it.
+    const [prospects, opportunities, scope] = await Promise.all([
       includeProspects
         ? client.list("prospect", {
             filters: { account: relId(id) },
@@ -86,58 +97,53 @@ export async function getAccountProfile(input: GetAccountProfileInput): Promise<
             pageSize: 50,
           })
         : Promise.resolve({ data: [] as readonly Record<string, unknown>[], nextCursor: null }),
-      // ID-only scope fetch. Skipped when we already have full prospects, or
-      // when activity counts are off.
-      !includeProspects && includeRecentActivity
-        ? client.list<{ id: number }>("prospect", {
-            filters: { account: relId(id) },
-            fields: { prospect: [] },
-            pageSize: 500,
-          })
-        : Promise.resolve({ data: [] as readonly { id: number }[], nextCursor: null }),
+      includeRecentActivity
+        ? fetchAccountProspectIds(client, id)
+        : Promise.resolve({ ids: [] as readonly number[], truncated: false }),
     ]);
 
-    const prospectIds = (includeProspects ? prospects.data : prospectsForScope.data)
-      .map((p) => p.id)
-      .filter((pid): pid is number => typeof pid === "number");
+    const prospectIds = scope.ids;
+    const scopeTruncated = scope.truncated;
 
     // Phase 2: activity counts, scoped via prospect → account.
     const sinceRange = range(`${since}T00:00:00Z`, new Date().toISOString());
     const noProspects = prospectIds.length === 0;
+    const skipCounts = !includeRecentActivity || noProspects;
+    const skipped = Promise.resolve({ count: 0, truncated: false });
     const [mailingsCount, callsCount, tasksCount, sequenceStatesCount] = await Promise.all([
-      includeRecentActivity && !noProspects
-        ? safeCountRecent(client, "mailing", {
-            prospect: relId(prospectIds),
+      skipCounts
+        ? skipped
+        : safeCountRecent(client, "mailing", {
+            prospect: relId([...prospectIds]),
             createdAt: sinceRange,
-          })
-        : Promise.resolve({
-            count: noProspects && includeRecentActivity ? 0 : 0,
-            truncated: false,
           }),
-      includeRecentActivity && !noProspects
-        ? // Outreach v2 doesn't accept date filters on `call`; scope by
+      skipCounts
+        ? skipped
+        : // Outreach v2 doesn't accept date filters on `call`; scope by
           // prospect only — the value is lifetime calls for this account's
           // current prospects, surfaced via `callsLoggedNote` below.
-          safeCountRecent(client, "call", { prospect: relId(prospectIds) })
-        : Promise.resolve({ count: 0, truncated: false }),
-      includeRecentActivity && !noProspects
-        ? safeCountRecent(client, "task", {
-            prospect: relId(prospectIds),
+          safeCountRecent(client, "call", { prospect: relId([...prospectIds]) }),
+      skipCounts
+        ? skipped
+        : safeCountRecent(client, "task", {
+            prospect: relId([...prospectIds]),
             createdAt: sinceRange,
-          })
-        : Promise.resolve({ count: 0, truncated: false }),
-      includeRecentActivity && !noProspects
-        ? safeCountRecent(client, "sequenceState", {
-            prospect: relId(prospectIds),
+          }),
+      skipCounts
+        ? skipped
+        : safeCountRecent(client, "sequenceState", {
+            prospect: relId([...prospectIds]),
             createdAt: sinceRange,
-          })
-        : Promise.resolve({ count: 0, truncated: false }),
+          }),
     ]);
 
     const activeCounts = new Map<number, number>();
     if (prospectIds.length > 0) {
       const activeStates = await client.list<{ prospectId: number }>("sequenceState", {
-        filters: { prospect: relId(prospectIds), state: ["active", "paused", "pending"] },
+        filters: {
+          prospect: relId([...prospectIds]),
+          state: ["active", "paused", "pending"],
+        },
         fields: { sequenceState: ["state"] },
         pageSize: 500,
       });
@@ -145,6 +151,10 @@ export async function getAccountProfile(input: GetAccountProfileInput): Promise<
         activeCounts.set(s.prospectId, (activeCounts.get(s.prospectId) ?? 0) + 1);
       }
     }
+
+    const someCountUnavailable = [mailingsCount, callsCount, tasksCount, sequenceStatesCount].some(
+      (c) => c.count === -1,
+    );
 
     return {
       account: {
@@ -192,20 +202,66 @@ export async function getAccountProfile(input: GetAccountProfileInput): Promise<
         profileUrl: profileUrl("opportunity", o["id"] as number),
       })),
       recentActivity: {
+        scopeProspectCount: prospectIds.length,
+        truncated: scopeTruncated,
         mailingsSent: mailingsCount.count >= 0 ? mailingsCount.count : null,
         callsLogged: callsCount.count >= 0 ? callsCount.count : null,
         tasksCreated: tasksCount.count >= 0 ? tasksCount.count : null,
         sequencesStarted: sequenceStatesCount.count >= 0 ? sequenceStatesCount.count : null,
         callsLoggedNote:
           "Scoped to this account's current prospects. Outreach v2 does not accept date filters on `call`, so this is a lifetime count for those prospects, not a 30-day count.",
-        unavailableNote: [mailingsCount, callsCount, tasksCount, sequenceStatesCount].some(
-          (c) => c.count === -1,
-        )
-          ? "Some counts unavailable — Outreach API rejected the filter at this scope. Narrow the window or check the rep's permissions and retry."
-          : undefined,
+        ...(scopeTruncated && {
+          scopeTruncatedNote: `Activity counts cover the first ${String(prospectIds.length)} of this account's prospects (cap MAX_SCOPE_PROSPECTS=${String(MAX_SCOPE_PROSPECTS)}). Numbers are a lower bound; narrow by sub-segment for exact figures.`,
+        }),
+        ...(someCountUnavailable && {
+          unavailableNote:
+            "Some counts unavailable — Outreach API rejected the filter at this scope. Narrow the window or check the rep's permissions and retry.",
+        }),
       },
     };
   });
+}
+
+/**
+ * Paginate `prospect` by account up to MAX_SCOPE_PROSPECTS IDs. Returns
+ * `truncated: true` when the cap was hit AND the upstream still had a
+ * nextCursor — the caller's counts will be a lower bound in that case.
+ */
+async function fetchAccountProspectIds(
+  client: OutreachClient,
+  accountId: number,
+): Promise<{ readonly ids: readonly number[]; readonly truncated: boolean }> {
+  const ids: number[] = [];
+  let cursor: string | null = null;
+  for (;;) {
+    const remaining = MAX_SCOPE_PROSPECTS - ids.length;
+    if (remaining <= 0) {
+      // We already filled the cap on a previous iteration; the next-cursor
+      // check below ran but we haven't actually fetched again. Defensive: if
+      // we got here we have not seen a null cursor, so the upstream still
+      // had more — signal truncated.
+      return { ids, truncated: true };
+    }
+    const pageSize = Math.min(remaining, SCOPE_PAGE_SIZE);
+    const page: ListResult<{ id: number }> = await client.list<{ id: number }>("prospect", {
+      filters: { account: relId(accountId) },
+      fields: { prospect: [] },
+      pageSize,
+      ...(cursor !== null && cursor !== "" && { cursor }),
+    });
+    for (const p of page.data) {
+      if (typeof p.id === "number") ids.push(p.id);
+    }
+    if (page.nextCursor === null || page.nextCursor === "") {
+      // Upstream exhausted; not truncated regardless of cap.
+      return { ids, truncated: false };
+    }
+    if (ids.length >= MAX_SCOPE_PROSPECTS) {
+      // Hit the cap with more pages still available upstream.
+      return { ids, truncated: true };
+    }
+    cursor = page.nextCursor;
+  }
 }
 
 async function safeCountRecent(
