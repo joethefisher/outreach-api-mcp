@@ -1,8 +1,9 @@
 // compareSequences — side-by-side performance for 2-5 sequences over the same window.
 
+import { isErrorEnvelope, tooManyInputs, validationError } from "../errors/envelopes.js";
+
 import { runTool } from "./_helpers.js";
 import { analyzeSequencePerformance } from "./analyzeSequencePerformance.js";
-import { isErrorEnvelope, tooManyInputs, validationError } from "../errors/envelopes.js";
 
 export interface CompareSequencesInput {
   readonly sequenceIds: readonly number[];
