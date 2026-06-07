@@ -170,8 +170,15 @@ const URL_PATH_PLURALS: Readonly<Record<string, string>> = {
   user: "users",
 };
 
-/** Build an Outreach web-app URL for a given resource type and ID. */
-export function profileUrl(resourceType: string, id: number | string): string {
+/**
+ * Build an Outreach web-app URL for a given resource type and ID.
+ *
+ * Accepts `unknown` for `id` so callers reading from `Record<string,
+ * unknown>` rows (most tools) don't need to launder the value through
+ * an `as number` cast. Outreach's JSON:API guarantees an `id` per
+ * resource; this just forwards `String(id)` and trusts the upstream.
+ */
+export function profileUrl(resourceType: string, id: unknown): string {
   const path = URL_PATH_PLURALS[resourceType] ?? `${resourceType}s`;
   return `https://web.outreach.io/${path}/${String(id)}`;
 }

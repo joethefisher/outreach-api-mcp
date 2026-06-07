@@ -176,14 +176,25 @@ export async function getProspectProfile(input: GetProspectProfileInput): Promis
     const labelledProspect = includeCustomFields
       ? schema.applyLabelsTo("prospect", { ...prospect })
       : prospect;
-    const labelledAccount = includeCustomFields
-      ? schema.applyLabelsTo("account", {
-          id: prospect["accountId"] as number,
-          custom1: prospect["accountCustom1"],
-          custom2: prospect["accountCustom2"],
-          custom3: prospect["accountCustom3"],
-        })
-      : ({ id: prospect["accountId"] } as Record<string, unknown>);
+    // DES-03: narrow `accountId` once via a typed local so the label
+    // shape + profileUrl downstream don't need `as number` casts.
+    // `accountId` is genuinely optional (a prospect may not be linked
+    // to an account); the `?? 0` fallback only matters for the
+    // labelled-account shape passed to `schema.applyLabelsTo`, and
+    // only when includeCustomFields is true AND accountId is absent —
+    // a degenerate case where the labelled output is discarded anyway
+    // because `account: null` is rendered.
+    const accountIdRaw = prospect["accountId"];
+    const accountId = typeof accountIdRaw === "number" ? accountIdRaw : null;
+    const labelledAccount: Record<string, unknown> =
+      includeCustomFields && accountId !== null
+        ? schema.applyLabelsTo("account", {
+            id: accountId,
+            custom1: prospect["accountCustom1"],
+            custom2: prospect["accountCustom2"],
+            custom3: prospect["accountCustom3"],
+          })
+        : { id: accountId };
 
     return {
       prospect: {
@@ -207,18 +218,18 @@ export async function getProspectProfile(input: GetProspectProfileInput): Promis
         profileUrl: profileUrl("prospect", id),
       },
       account:
-        prospect["accountId"] !== undefined
+        accountId !== null
           ? {
-              id: prospect["accountId"],
+              id: accountId,
               name: prospect["accountName"],
               domain: prospect["accountDomain"],
               industry: prospect["accountIndustry"],
               numberOfEmployees: prospect["accountEmployeeCount"],
               ...("customFields" in labelledAccount &&
-                (labelledAccount as Record<string, unknown>)["customFields"] !== undefined && {
-                  customFields: (labelledAccount as Record<string, unknown>)["customFields"],
+                labelledAccount["customFields"] !== undefined && {
+                  customFields: labelledAccount["customFields"],
                 }),
-              profileUrl: profileUrl("account", prospect["accountId"] as number),
+              profileUrl: profileUrl("account", accountId),
             }
           : null,
       stage: prospect["stageName"] !== undefined ? { name: prospect["stageName"] } : null,

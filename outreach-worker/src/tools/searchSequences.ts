@@ -130,7 +130,7 @@ export async function searchSequences(input: SearchSequencesInput): Promise<stri
         ownerName: nameFromParts(s["ownerFirstName"], s["ownerLastName"]),
         createdAt: s["createdAt"],
         updatedAt: s["updatedAt"],
-        profileUrl: profileUrl("sequence", s["id"] as number),
+        profileUrl: profileUrl("sequence", s["id"]),
       })),
       truncated: fallbackTruncated || result.nextCursor !== null,
     };

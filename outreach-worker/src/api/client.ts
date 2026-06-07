@@ -242,6 +242,11 @@ export class LiveOutreachClient implements OutreachClient {
       const text = await response.text();
       throw new OutreachApiException(outreachApiError(response.status, text.slice(0, 200)));
     }
+    // DES-03 (§1.4 typed-parse-boundary justification): Outreach v2
+    // returns JSON:API documents per spec. `response.json()` is typed
+    // `Promise<unknown>` by the fetch API; we trust the upstream shape
+    // here. Sparse-fieldset/relationship-id checks downstream in
+    // `jsonapi.ts` catch shape drift if it happens.
     return (await response.json()) as JsonApiDocument;
   }
 

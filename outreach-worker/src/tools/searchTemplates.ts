@@ -117,7 +117,7 @@ export async function searchTemplates(input: SearchTemplatesInput): Promise<stri
         ownerId: t["ownerId"],
         ownerName: nameFromParts(t["ownerFirstName"], t["ownerLastName"]),
         sequenceCount: usageCounts.get(t["id"] as number) ?? 0,
-        profileUrl: profileUrl("template", t["id"] as number),
+        profileUrl: profileUrl("template", t["id"]),
         updatedAt: t["updatedAt"],
       })),
       truncated: fallbackTruncated || result.nextCursor !== null,

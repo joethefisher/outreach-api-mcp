@@ -108,7 +108,7 @@ export async function searchSnippets(input: SearchSnippetsInput): Promise<string
           .slice(0, 200),
         ownerId: s["ownerId"],
         ownerName: nameFromParts(s["ownerFirstName"], s["ownerLastName"]),
-        profileUrl: profileUrl("snippet", s["id"] as number),
+        profileUrl: profileUrl("snippet", s["id"]),
         updatedAt: s["updatedAt"],
       })),
       truncated: fallbackTruncated || result.nextCursor !== null,

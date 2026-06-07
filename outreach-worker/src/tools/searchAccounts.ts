@@ -132,7 +132,7 @@ export async function searchAccounts(input: SearchAccountsInput): Promise<string
         buyerIntentScore: a["buyerIntentScore"],
         tags: a["tags"] ?? [],
         ...(labelled.customFields !== undefined && { customFields: labelled.customFields }),
-        profileUrl: profileUrl("account", a["id"] as number),
+        profileUrl: profileUrl("account", a["id"]),
         updatedAt: a["updatedAt"],
       };
     });

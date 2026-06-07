@@ -54,6 +54,11 @@ class WorkerCompat {
   });
 
   tool<TArgs extends ZodRawShape>(name: string, config: ToolConfig<TArgs>): void {
+    // DES-03 (§1.4 interop justification): @modelcontextprotocol/sdk's
+    // `registerTool` is heavily overloaded and its public types collapse
+    // each tool's specific schema/args generics to a wide intersection.
+    // We re-type it locally so the call site stays type-safe against
+    // TArgs, instead of letting the SDK widen everything to unknown.
     const registerTool = this.server.registerTool.bind(this.server) as (
       n: string,
       c: { title?: string; description?: string; inputSchema?: TArgs },
@@ -73,6 +78,10 @@ class WorkerCompat {
         content: [
           {
             type: "text",
+            // DES-03 (§1.4 interop justification): the MCP SDK passes the
+            // tool callback `Record<string, unknown>` after zod validation
+            // succeeded; the inferred zod shape matches at runtime but the
+            // SDK doesn't preserve that in its types. Safe by construction.
             text: await config.execute(args as z.infer<z.ZodObject<TArgs>>),
           },
         ],
