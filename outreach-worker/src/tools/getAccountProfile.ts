@@ -220,7 +220,7 @@ export async function getAccountProfile(input: GetAccountProfileInput): Promise<
         stageName: p["stageName"],
         activeSequenceCount: activeCounts.get(p["id"] as number) ?? 0,
         engagedScore: p["engagedScore"],
-        profileUrl: profileUrl("prospect", p["id"] as number),
+        profileUrl: profileUrl("prospect", p["id"]),
       })),
       opportunities: opportunities.data.map((o) => ({
         id: o["id"],
@@ -230,7 +230,7 @@ export async function getAccountProfile(input: GetAccountProfileInput): Promise<
         closeDate: o["closeDate"],
         state: o["state"],
         probability: o["probability"],
-        profileUrl: profileUrl("opportunity", o["id"] as number),
+        profileUrl: profileUrl("opportunity", o["id"]),
       })),
       recentActivity: {
         scopeProspectCount: prospectIds.length,
