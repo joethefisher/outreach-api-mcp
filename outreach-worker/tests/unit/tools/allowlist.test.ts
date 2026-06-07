@@ -57,6 +57,7 @@ describe("isAllowedResource", () => {
   });
 
   it("narrows the type when used as a type guard", () => {
+    // eslint-disable-next-line @typescript-eslint/no-inferrable-types -- annotation is the point: prove the guard narrows from a wide `string`, not a literal.
     const input: string = "account";
     if (isAllowedResource(input)) {
       // After the guard, `input` narrows to AllowedResource — a value of this
