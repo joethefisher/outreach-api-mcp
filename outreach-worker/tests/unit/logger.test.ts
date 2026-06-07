@@ -180,6 +180,35 @@ describe("redact — value-shape scrubbing (SEC-01)", () => {
     expect(out.sequenceState).toBe("active");
     expect(out.note).toBe("Following up on the demo we did Tuesday");
   });
+
+  it("does not scrub bare `code=` / `state=` outside an OAuth context (NEW-5)", () => {
+    // Real-world false positives the old broad scrubber produced:
+    // a marketing email body, a UTM-tagged URL, an audit field. None of
+    // these strings carry an OAuth/PKCE marker, so the context-gated
+    // pattern must leave them alone.
+    const out = redact({
+      emailBody: "Use promo code=SUMMER20 at checkout",
+      utm: "https://app.example.com/x?utm_source=demo&state=enabled",
+      audit: "filter token=signed-export-link applied",
+    });
+    expect(out.emailBody).toContain("code=SUMMER20");
+    expect(out.utm).toContain("state=enabled");
+    expect(out.audit).toContain("token=signed-export-link");
+  });
+
+  it("still scrubs `code=` / `state=` when the string is a real OAuth body (NEW-5)", () => {
+    // PKCE authorization callback query (RFC 7636) carries both `code=` and
+    // `state=`. Presence of `code_challenge_method=`/`redirect_uri=` markers
+    // proves OAuth context — both bare fields must scrub.
+    const oauthQuery =
+      "code=authcode-shouldnotleak&state=csrf-shouldnotleak" +
+      "&redirect_uri=http://localhost:8765/callback";
+    const out = redact({ callback: oauthQuery });
+    expect(out.callback).not.toContain("authcode-shouldnotleak");
+    expect(out.callback).not.toContain("csrf-shouldnotleak");
+    expect(out.callback).toContain("code=[REDACTED]");
+    expect(out.callback).toContain("state=[REDACTED]");
+  });
 });
 
 describe("redact — circular-reference guard (SEC-06)", () => {
