@@ -2,7 +2,7 @@
 
 import { range, relId } from "../api/filters.js";
 
-import { daysAgoISO, optionalFetch, profileUrl, runTool } from "./_helpers.js";
+import { daysAgoISO, nameFromParts, optionalFetch, profileUrl, runTool } from "./_helpers.js";
 
 export interface GetProspectProfileInput {
   readonly prospectId: number;
@@ -297,11 +297,4 @@ export async function getProspectProfile(input: GetProspectProfileInput): Promis
       ...(unavailableSections.length > 0 && { unavailableSections }),
     };
   });
-}
-
-function nameFromParts(first: unknown, last: unknown): string | undefined {
-  if (typeof first !== "string" && typeof last !== "string") return undefined;
-  const combined =
-    `${typeof first === "string" ? first : ""} ${typeof last === "string" ? last : ""}`.trim();
-  return combined === "" ? undefined : combined;
 }

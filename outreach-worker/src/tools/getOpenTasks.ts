@@ -3,7 +3,7 @@
 import { range, relId, type FilterMap } from "../api/filters.js";
 import { ambiguousMatch, noResults } from "../errors/envelopes.js";
 
-import { profileUrl, runTool } from "./_helpers.js";
+import { clamp, nameFromParts, profileUrl, runTool } from "./_helpers.js";
 import { resolveUserByName } from "./_resolvers.js";
 
 export interface GetOpenTasksInput {
@@ -90,15 +90,4 @@ export async function getOpenTasks(input: GetOpenTasksInput): Promise<string> {
       truncated: tasks.nextCursor !== null,
     };
   });
-}
-
-function clamp(n: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, Math.floor(n)));
-}
-
-function nameFromParts(first: unknown, last: unknown): string | undefined {
-  if (typeof first !== "string" && typeof last !== "string") return undefined;
-  const combined =
-    `${typeof first === "string" ? first : ""} ${typeof last === "string" ? last : ""}`.trim();
-  return combined === "" ? undefined : combined;
 }

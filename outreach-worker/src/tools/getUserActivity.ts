@@ -8,7 +8,7 @@
 import { range, relId, type FilterMap } from "../api/filters.js";
 import { ambiguousMatch, noResults } from "../errors/envelopes.js";
 
-import { daysAgoISO, runTool, todayISO, validateDateRange } from "./_helpers.js";
+import { daysAgoISO, nameFromParts, runTool, todayISO, validateDateRange } from "./_helpers.js";
 import { resolveUserByName } from "./_resolvers.js";
 
 export interface GetUserActivityInput {
@@ -212,7 +212,7 @@ export async function getUserActivity(input: GetUserActivityInput): Promise<stri
     return {
       user: {
         id: user["id"],
-        name: nameFromParts(user["firstName"], user["lastName"]),
+        name: nameFromParts(user["firstName"], user["lastName"]) ?? "",
         email: user["email"],
         title: user["title"],
       },
@@ -245,8 +245,4 @@ export async function getUserActivity(input: GetUserActivityInput): Promise<stri
       topAccounts,
     };
   });
-}
-
-function nameFromParts(first: unknown, last: unknown): string {
-  return `${typeof first === "string" ? first : ""} ${typeof last === "string" ? last : ""}`.trim();
 }
