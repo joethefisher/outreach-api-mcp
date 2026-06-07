@@ -272,6 +272,37 @@ describe("Block B — getProspectSequenceHistory", () => {
   });
 });
 
+describe("Block B — getProspectSequenceHistory (COR-10)", () => {
+  it("returns durationDays=null when stateChangedAt precedes createdAt (clock-skew safety)", async () => {
+    // Imported / clock-skewed data can yield stateChangedAt < createdAt.
+    // Pre-fix the tool reported a negative durationDays; post-fix it
+    // reports null so the agent doesn't surface a nonsense window.
+    await installToolContext({
+      get: {
+        prospect: { 42: { id: 42, firstName: "Sally", lastName: "Smith" } },
+      },
+      list: {
+        sequenceState: [
+          {
+            id: 99,
+            prospectId: 42,
+            sequenceId: 7,
+            sequenceName: "Cold outbound",
+            state: "finished",
+            createdAt: "2026-05-10T00:00:00Z",
+            stateChangedAt: "2026-05-05T00:00:00Z", // 5 days BEFORE createdAt
+          },
+        ],
+      },
+    });
+    const raw = await getProspectSequenceHistory({ prospectId: 42 });
+    const result = parseSuccess(raw) as unknown as {
+      history: { sequenceId: number; durationDays: number | null }[];
+    };
+    expect(result.history[0]?.durationDays).toBeNull();
+  });
+});
+
 describe("Block B — compareSequences", () => {
   function installCompareFixture(): Promise<void> {
     return installToolContext({
