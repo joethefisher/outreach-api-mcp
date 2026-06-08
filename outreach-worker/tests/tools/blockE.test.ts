@@ -170,6 +170,34 @@ describe("Block E — draftEmail (context-only contract)", () => {
     expect(result.template?.subject).toBe("Quick question");
   });
 
+  it("truncates oversized template bodies to 5000 chars + suffix (DES-04)", async () => {
+    const long = "x".repeat(6000);
+    await installToolContext({
+      get: {
+        prospect: { 42: prospectFixture },
+        template: {
+          77: {
+            id: 77,
+            name: "Wall of text",
+            subject: "Big",
+            bodyHtml: long,
+            bodyText: long,
+          },
+        },
+      },
+      list: { mailing: [], call: [] },
+    });
+    const raw = await draftEmail({ prospectId: 42, intent: "x", templateId: 77 });
+    const result = parseSuccess(raw) as unknown as {
+      template: { bodyHtml: string; bodyText: string } | null;
+    };
+    expect(result.template?.bodyHtml).toContain("[...truncated]");
+    expect(result.template?.bodyText).toContain("[...truncated]");
+    expect((result.template?.bodyHtml ?? "").length).toBeLessThanOrEqual(
+      5000 + "\n[...truncated]".length,
+    );
+  });
+
   it("degrades each optional context fetch into unavailableSections (NEW-2)", async () => {
     await installToolContext({
       get: { prospect: { 42: prospectFixture } },

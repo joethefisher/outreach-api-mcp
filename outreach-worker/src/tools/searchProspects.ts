@@ -5,7 +5,7 @@ import type { OutreachClient } from "../api/client.js";
 import { range, relId, type FilterMap } from "../api/filters.js";
 import { ambiguousMatch, noResults } from "../errors/envelopes.js";
 
-import { profileUrl, runTool } from "./_helpers.js";
+import { clamp, nameFromParts, profileUrl, runTool } from "./_helpers.js";
 import { resolveAccountByName, resolveStageByName, resolveUserByName } from "./_resolvers.js";
 
 export interface SearchProspectsInput {
@@ -257,10 +257,6 @@ async function activeSequenceCounts(
   return counts;
 }
 
-function clamp(n: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, Math.floor(n)));
-}
-
 function stripAccents(s: string): string {
   return s.normalize("NFD").replace(/\p{M}/gu, "");
 }
@@ -275,11 +271,4 @@ function prospectMatchesToken(prospect: Record<string, unknown>, token: string):
     if (stripAccents(v).toLowerCase().includes(needle)) return true;
   }
   return false;
-}
-
-function nameFromParts(first: unknown, last: unknown): string | undefined {
-  if (typeof first !== "string" && typeof last !== "string") return undefined;
-  const combined =
-    `${typeof first === "string" ? first : ""} ${typeof last === "string" ? last : ""}`.trim();
-  return combined === "" ? undefined : combined;
 }

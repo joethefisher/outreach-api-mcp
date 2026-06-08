@@ -3,7 +3,7 @@
 import { range, relId, type FilterMap } from "../api/filters.js";
 import { ambiguousMatch, noResults } from "../errors/envelopes.js";
 
-import { profileUrl, runTool } from "./_helpers.js";
+import { clamp, isNonEmpty, nameFromParts, profileUrl, runTool } from "./_helpers.js";
 import { resolveUserByName } from "./_resolvers.js";
 
 export interface SearchSequencesInput {
@@ -130,24 +130,9 @@ export async function searchSequences(input: SearchSequencesInput): Promise<stri
         ownerName: nameFromParts(s["ownerFirstName"], s["ownerLastName"]),
         createdAt: s["createdAt"],
         updatedAt: s["updatedAt"],
-        profileUrl: profileUrl("sequence", s["id"] as number),
+        profileUrl: profileUrl("sequence", s["id"]),
       })),
       truncated: fallbackTruncated || result.nextCursor !== null,
     };
   });
-}
-
-function isNonEmpty(s: string | null | undefined): s is string {
-  return s !== null && s !== undefined && s !== "";
-}
-
-function clamp(n: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, Math.floor(n)));
-}
-
-function nameFromParts(first: unknown, last: unknown): string | undefined {
-  if (typeof first !== "string" && typeof last !== "string") return undefined;
-  const combined =
-    `${typeof first === "string" ? first : ""} ${typeof last === "string" ? last : ""}`.trim();
-  return combined === "" ? undefined : combined;
 }

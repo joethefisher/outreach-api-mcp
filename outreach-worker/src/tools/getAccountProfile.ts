@@ -3,7 +3,7 @@
 import type { ListResult, OutreachClient } from "../api/client.js";
 import { range, relId, type FilterMap } from "../api/filters.js";
 
-import { daysAgoISO, optionalFetch, profileUrl, runTool } from "./_helpers.js";
+import { daysAgoISO, nameFromParts, optionalFetch, profileUrl, runTool } from "./_helpers.js";
 
 export interface GetAccountProfileInput {
   readonly accountId: number;
@@ -220,7 +220,7 @@ export async function getAccountProfile(input: GetAccountProfileInput): Promise<
         stageName: p["stageName"],
         activeSequenceCount: activeCounts.get(p["id"] as number) ?? 0,
         engagedScore: p["engagedScore"],
-        profileUrl: profileUrl("prospect", p["id"] as number),
+        profileUrl: profileUrl("prospect", p["id"]),
       })),
       opportunities: opportunities.data.map((o) => ({
         id: o["id"],
@@ -230,7 +230,7 @@ export async function getAccountProfile(input: GetAccountProfileInput): Promise<
         closeDate: o["closeDate"],
         state: o["state"],
         probability: o["probability"],
-        profileUrl: profileUrl("opportunity", o["id"] as number),
+        profileUrl: profileUrl("opportunity", o["id"]),
       })),
       recentActivity: {
         scopeProspectCount: prospectIds.length,
@@ -306,11 +306,4 @@ async function safeCountRecent(
   } catch {
     return { count: -1, truncated: true };
   }
-}
-
-function nameFromParts(first: unknown, last: unknown): string | undefined {
-  if (typeof first !== "string" && typeof last !== "string") return undefined;
-  const combined =
-    `${typeof first === "string" ? first : ""} ${typeof last === "string" ? last : ""}`.trim();
-  return combined === "" ? undefined : combined;
 }

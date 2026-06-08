@@ -8,7 +8,7 @@
 import { OutreachApiException } from "../api/client.js";
 import { relId } from "../api/filters.js";
 
-import { optionalFetch, profileUrl, runTool } from "./_helpers.js";
+import { nameFromParts, optionalFetch, profileUrl, runTool } from "./_helpers.js";
 
 export interface GetSequenceProfileInput {
   readonly sequenceId: number;
@@ -201,11 +201,4 @@ export async function getSequenceProfile(input: GetSequenceProfileInput): Promis
 
 function isScopeMissing(e: unknown): boolean {
   return e instanceof OutreachApiException && e.envelope.error === "scopeMissing";
-}
-
-function nameFromParts(first: unknown, last: unknown): string | undefined {
-  if (typeof first !== "string" && typeof last !== "string") return undefined;
-  const combined =
-    `${typeof first === "string" ? first : ""} ${typeof last === "string" ? last : ""}`.trim();
-  return combined === "" ? undefined : combined;
 }

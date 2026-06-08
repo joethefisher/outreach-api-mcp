@@ -3,7 +3,7 @@
 import { range, relId, type FilterMap } from "../api/filters.js";
 import { ambiguousMatch, noResults } from "../errors/envelopes.js";
 
-import { profileUrl, runTool } from "./_helpers.js";
+import { clamp, isNonEmpty, nameFromParts, profileUrl, runTool } from "./_helpers.js";
 import { resolveUserByName } from "./_resolvers.js";
 
 export interface SearchAccountsInput {
@@ -132,7 +132,7 @@ export async function searchAccounts(input: SearchAccountsInput): Promise<string
         buyerIntentScore: a["buyerIntentScore"],
         tags: a["tags"] ?? [],
         ...(labelled.customFields !== undefined && { customFields: labelled.customFields }),
-        profileUrl: profileUrl("account", a["id"] as number),
+        profileUrl: profileUrl("account", a["id"]),
         updatedAt: a["updatedAt"],
       };
     });
@@ -143,19 +143,4 @@ export async function searchAccounts(input: SearchAccountsInput): Promise<string
       nextCursor: result.nextCursor,
     };
   });
-}
-
-function isNonEmpty(s: string | null | undefined): s is string {
-  return s !== null && s !== undefined && s !== "";
-}
-
-function clamp(n: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, Math.floor(n)));
-}
-
-function nameFromParts(first: unknown, last: unknown): string | undefined {
-  if (typeof first !== "string" && typeof last !== "string") return undefined;
-  const combined =
-    `${typeof first === "string" ? first : ""} ${typeof last === "string" ? last : ""}`.trim();
-  return combined === "" ? undefined : combined;
 }
