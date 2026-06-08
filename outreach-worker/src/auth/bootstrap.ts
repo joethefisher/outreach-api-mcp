@@ -11,6 +11,7 @@
 //   - Loopback redirect only — the caller binds 127.0.0.1, not 0.0.0.0.
 
 import { createHash, randomBytes } from "node:crypto";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
 export interface PkcePair {
   readonly verifier: string;
@@ -172,4 +173,128 @@ function isTokenResponse(value: unknown): value is RawTokenResponse {
 
 function base64url(buf: Buffer): string {
   return buf.toString("base64url");
+}
+
+// ─── Loopback callback listener (extracted from the CLI for testability) ───
+
+export interface CallbackPayload {
+  readonly code: string;
+}
+
+export interface AwaitCallbackOptions {
+  /** Path the listener accepts (default: "/callback"). */
+  readonly callbackPath?: string;
+  /** Reject the promise after this many ms (default: 5 minutes). */
+  readonly timeoutMs?: number;
+}
+
+export interface AwaitCallbackHandle {
+  /** Resolved with `{ code }` on a valid callback; rejected on error/timeout. */
+  readonly result: Promise<CallbackPayload>;
+  /**
+   * Actual bound port — useful when `port === 0` (ephemeral). Valid only
+   * after the listener is bound, which is guaranteed by the time the
+   * `awaitCallback` promise resolves.
+   */
+  readonly port: number;
+  /** Close the listener early without waiting for resolve/reject. */
+  close(): void;
+}
+
+const DEFAULT_CALLBACK_PATH = "/callback";
+const DEFAULT_CALLBACK_TIMEOUT_MS = 5 * 60 * 1000;
+
+/**
+ * Stand up a 127.0.0.1-only HTTP listener that resolves with the OAuth
+ * `code` parameter on a valid callback, or rejects on state mismatch /
+ * provider error / missing code / timeout / non-callback request.
+ *
+ * Pass `port === 0` to bind an ephemeral port (returned in the handle).
+ * The returned promise resolves only after `listen` succeeds, so callers
+ * can read `handle.port` immediately. The listener closes itself on
+ * resolve, reject, or `close()`.
+ */
+export function awaitCallback(
+  port: number,
+  expectedState: string,
+  options: AwaitCallbackOptions = {},
+): Promise<AwaitCallbackHandle> {
+  const callbackPath = options.callbackPath ?? DEFAULT_CALLBACK_PATH;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_CALLBACK_TIMEOUT_MS;
+
+  let resolveFn: (payload: CallbackPayload) => void = () => undefined;
+  let rejectFn: (err: Error) => void = () => undefined;
+  const result = new Promise<CallbackPayload>((resolve, reject) => {
+    resolveFn = resolve;
+    rejectFn = reject;
+  });
+
+  const server = createServer((req: IncomingMessage, res: ServerResponse): void => {
+    const addr = server.address();
+    const boundPort = addr !== null && typeof addr === "object" ? addr.port : port;
+    const url = new URL(req.url ?? "/", `http://127.0.0.1:${String(boundPort)}`);
+    if (url.pathname !== callbackPath) {
+      respond(res, 404, "Not Found");
+      return;
+    }
+    try {
+      const parsed = parseCallback(url.searchParams, expectedState);
+      respond(res, 200, "Outreach authorization complete. You can close this tab.");
+      cleanup();
+      resolveFn({ code: parsed.code });
+    } catch (e) {
+      const message = e instanceof CallbackError ? e.message : "Unexpected callback error.";
+      respond(res, 400, escapeHtml(message));
+      cleanup();
+      rejectFn(e instanceof Error ? e : new Error(String(e)));
+    }
+  });
+
+  const timeoutHandle = setTimeout(() => {
+    cleanup();
+    rejectFn(new Error(`Timed out waiting for OAuth callback after ${String(timeoutMs / 1000)}s.`));
+  }, timeoutMs);
+
+  function cleanup(): void {
+    clearTimeout(timeoutHandle);
+    server.close();
+  }
+
+  return new Promise<AwaitCallbackHandle>((resolveHandle, rejectHandle) => {
+    server.once("listening", () => {
+      const addr = server.address();
+      const boundPort = addr !== null && typeof addr === "object" ? addr.port : port;
+      server.on("error", (e) => {
+        cleanup();
+        rejectFn(e);
+      });
+      resolveHandle({
+        result,
+        port: boundPort,
+        close: cleanup,
+      });
+    });
+    server.once("error", (e) => {
+      cleanup();
+      rejectHandle(e);
+    });
+    server.listen(port, "127.0.0.1");
+  });
+}
+
+function respond(res: ServerResponse, status: number, message: string): void {
+  res.statusCode = status;
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.end(
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>outreach-api-mcp</title></head><body style="font-family:system-ui,sans-serif;max-width:640px;margin:80px auto;padding:0 24px"><h1>${message}</h1></body></html>`,
+  );
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
