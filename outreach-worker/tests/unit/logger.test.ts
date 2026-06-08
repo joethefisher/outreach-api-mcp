@@ -69,11 +69,7 @@ describe("redact", () => {
       refresh_token: "secret",
       client_secret: "secret",
       Authorization: "Bearer secret",
-      code: "abc",
       code_verifier: "v",
-      state: "s",
-      token: "t",
-      bearer: "b",
       emails: ["a@b.c"],
       phoneNumbers: ["555"],
       bodyHtml: "<p>x</p>",
@@ -86,11 +82,7 @@ describe("redact", () => {
       "refresh_token",
       "client_secret",
       "Authorization",
-      "code",
       "code_verifier",
-      "state",
-      "token",
-      "bearer",
       "emails",
       "phoneNumbers",
       "bodyHtml",
@@ -100,18 +92,36 @@ describe("redact", () => {
     }
   });
 
+  it("does not over-redact benign properties at generic key names (SEC-02)", () => {
+    // `state`, `code`, `token`, `bearer` are common Outreach field names —
+    // sequenceState.state, country.code, an audit field literally called
+    // `token`. They were previously in REDACT_KEYS and caused false positives.
+    // Value-shape scrubbers (Bearer / JWT / OAuth form) still cover the
+    // actual secret shapes regardless of key.
+    const out = redact({
+      state: "active",
+      code: "US",
+      token: "csrf-1",
+      bearer: "primary",
+    }) as Record<string, unknown>;
+    expect(out["state"]).toBe("active");
+    expect(out["code"]).toBe("US");
+    expect(out["token"]).toBe("csrf-1");
+    expect(out["bearer"]).toBe("primary");
+  });
+
   it("recurses into nested objects and arrays", () => {
     const out = redact({
       outer: {
         access_token: "x",
         inner: { refresh_token: "y", keep: 1 },
       },
-      list: [{ code: "1", keep: "ok" }],
+      list: [{ access_token: "1", keep: "ok" }],
     });
     expect(out.outer.access_token).toBe("[REDACTED]");
     expect(out.outer.inner.refresh_token).toBe("[REDACTED]");
     expect(out.outer.inner.keep).toBe(1);
-    expect(out.list[0]!.code).toBe("[REDACTED]");
+    expect(out.list[0]!.access_token).toBe("[REDACTED]");
     expect(out.list[0]!.keep).toBe("ok");
   });
 
@@ -170,6 +180,35 @@ describe("redact — value-shape scrubbing (SEC-01)", () => {
     expect(out.sequenceState).toBe("active");
     expect(out.note).toBe("Following up on the demo we did Tuesday");
   });
+
+  it("does not scrub bare `code=` / `state=` outside an OAuth context (NEW-5)", () => {
+    // Real-world false positives the old broad scrubber produced:
+    // a marketing email body, a UTM-tagged URL, an audit field. None of
+    // these strings carry an OAuth/PKCE marker, so the context-gated
+    // pattern must leave them alone.
+    const out = redact({
+      emailBody: "Use promo code=SUMMER20 at checkout",
+      utm: "https://app.example.com/x?utm_source=demo&state=enabled",
+      audit: "filter token=signed-export-link applied",
+    });
+    expect(out.emailBody).toContain("code=SUMMER20");
+    expect(out.utm).toContain("state=enabled");
+    expect(out.audit).toContain("token=signed-export-link");
+  });
+
+  it("still scrubs `code=` / `state=` when the string is a real OAuth body (NEW-5)", () => {
+    // PKCE authorization callback query (RFC 7636) carries both `code=` and
+    // `state=`. Presence of `code_challenge_method=`/`redirect_uri=` markers
+    // proves OAuth context — both bare fields must scrub.
+    const oauthQuery =
+      "code=authcode-shouldnotleak&state=csrf-shouldnotleak" +
+      "&redirect_uri=http://localhost:8765/callback";
+    const out = redact({ callback: oauthQuery });
+    expect(out.callback).not.toContain("authcode-shouldnotleak");
+    expect(out.callback).not.toContain("csrf-shouldnotleak");
+    expect(out.callback).toContain("code=[REDACTED]");
+    expect(out.callback).toContain("state=[REDACTED]");
+  });
 });
 
 describe("redact — circular-reference guard (SEC-06)", () => {
@@ -187,5 +226,26 @@ describe("redact — circular-reference guard (SEC-06)", () => {
     const out = redact(arr);
     expect(Array.isArray(out)).toBe(true);
     expect(out[0]).toBe("[Circular]");
+  });
+
+  it("renders shared acyclic references twice, not as [Circular] (NEW-6)", () => {
+    // Two siblings pointing at the same object is NOT a cycle; the prior
+    // implementation marked the second occurrence as "[Circular]" because
+    // it tracked every visited node instead of the current path. The
+    // fixed guard delete-on-return so `seen` represents only the active
+    // call stack.
+    const shared = { name: "Acme", id: 42 };
+    const out = redact({ owner: shared, buyer: shared });
+    expect(out.owner).toEqual({ name: "Acme", id: 42 });
+    expect(out.buyer).toEqual({ name: "Acme", id: 42 });
+    expect(out.buyer).not.toBe("[Circular]");
+  });
+
+  it("handles a diamond DAG without false [Circular] (NEW-6)", () => {
+    const leaf = { value: "x" };
+    const mid = { left: leaf, right: leaf };
+    const out = redact({ root: mid });
+    expect(out.root.left).toEqual({ value: "x" });
+    expect(out.root.right).toEqual({ value: "x" });
   });
 });

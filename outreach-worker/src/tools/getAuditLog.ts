@@ -3,7 +3,7 @@
 import { type FilterMap } from "../api/filters.js";
 import { validationError } from "../errors/envelopes.js";
 
-import { runTool } from "./_helpers.js";
+import { runTool, validateDateRange } from "./_helpers.js";
 
 export interface GetAuditLogInput {
   readonly resourceType?: string | null;
@@ -20,19 +20,15 @@ export async function getAuditLog(input: GetAuditLogInput): Promise<string> {
   return runTool("getAuditLog", input, async ({ client }) => {
     const limit = clamp(input.limit ?? 100, 1, 500);
 
+    const dateValidation = validateDateRange(input.dateRangeFrom, input.dateRangeTo);
+    if (!dateValidation.ok) return dateValidation.envelope;
+
     const hasResource =
       input.resourceId !== null && input.resourceId !== undefined && input.resourceId !== 0;
     const hasUser = input.userId !== null && input.userId !== undefined && input.userId !== 0;
-    const from = input.dateRangeFrom;
-    const to = input.dateRangeTo;
-    const narrowDateRange =
-      from !== null &&
-      from !== undefined &&
-      from !== "" &&
-      to !== null &&
-      to !== undefined &&
-      to !== "" &&
-      daySpan(from, to) <= NARROW_DAYS;
+    const from = dateValidation.range.from;
+    const to = dateValidation.range.to;
+    const narrowDateRange = from !== null && to !== null && daySpan(from, to) <= NARROW_DAYS;
 
     if (!hasResource && !hasUser && !narrowDateRange) {
       return validationError(
@@ -56,8 +52,8 @@ export async function getAuditLog(input: GetAuditLogInput): Promise<string> {
     // Date bounds normalized to ISO timestamps for string comparison; null
     // on either side means "no bound on that side." Always applied so an
     // audit query is never returned outside its documented window (COR-01).
-    const fromTs = from !== null && from !== undefined && from !== "" ? `${from}T00:00:00Z` : null;
-    const toTs = to !== null && to !== undefined && to !== "" ? `${to}T23:59:59Z` : null;
+    const fromTs = from !== null ? `${from}T00:00:00Z` : null;
+    const toTs = to !== null ? `${to}T23:59:59Z` : null;
 
     if (
       wantResourceId !== null ||

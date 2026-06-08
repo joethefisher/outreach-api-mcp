@@ -8,7 +8,7 @@
 import { range, relId, type FilterMap } from "../api/filters.js";
 import { ambiguousMatch, noResults } from "../errors/envelopes.js";
 
-import { daysAgoISO, runTool, todayISO } from "./_helpers.js";
+import { daysAgoISO, runTool, todayISO, validateDateRange } from "./_helpers.js";
 import { resolveUserByName } from "./_resolvers.js";
 
 export interface GetUserActivityInput {
@@ -20,6 +20,9 @@ export interface GetUserActivityInput {
 
 export async function getUserActivity(input: GetUserActivityInput): Promise<string> {
   return runTool("getUserActivity", input, async ({ client }) => {
+    const dateValidation = validateDateRange(input.dateRangeFrom, input.dateRangeTo);
+    if (!dateValidation.ok) return dateValidation.envelope;
+
     let userId: number | undefined = input.userId ?? undefined;
     if (
       userId === undefined &&
@@ -38,8 +41,8 @@ export async function getUserActivity(input: GetUserActivityInput): Promise<stri
       return noResults({}, ["provide userId or userName"]);
     }
 
-    const from = input.dateRangeFrom ?? daysAgoISO(30);
-    const to = input.dateRangeTo ?? todayISO();
+    const from = dateValidation.range.from ?? daysAgoISO(30);
+    const to = dateValidation.range.to ?? todayISO();
     const fromIso = `${from}T00:00:00Z`;
     const toIso = `${to}T23:59:59Z`;
 

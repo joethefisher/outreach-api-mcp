@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { OutreachApiException } from "../../src/api/client.js";
+import { scopeMissing } from "../../src/errors/envelopes.js";
 import { configureLogger } from "../../src/logger.js";
 import { getAccountProfile } from "../../src/tools/getAccountProfile.js";
 import { getProspectProfile } from "../../src/tools/getProspectProfile.js";
@@ -90,9 +92,10 @@ describe("Block A — prospects & accounts", () => {
       },
       failOn: {
         // Mailings hit scopeMissing in this scenario. The whole tool used to
-        // collapse via Promise.all; now the section degrades and the response
-        // names what's missing.
-        list: { mailing: new Error("scopeMissing: mailings.read") },
+        // collapse via Promise.all; now the section degrades via
+        // optionalFetch (NEW-8) — only domain failures degrade; programmer
+        // errors propagate.
+        list: { mailing: new OutreachApiException(scopeMissing("mailings.read")) },
       },
     });
     const raw = await getProspectProfile({ prospectId: 42 });
@@ -107,6 +110,68 @@ describe("Block A — prospects & accounts", () => {
     expect(result.activeSequences).toHaveLength(1);
     expect(result.unavailableSections).toBeDefined();
     expect(result.unavailableSections?.some((s) => s.includes("recentMailings"))).toBe(true);
+  });
+
+  it("getAccountProfile degrades opportunities when that fetch fails; account + scope still returned (NEW-2)", async () => {
+    const env = await installToolContext({
+      get: {
+        account: { 7: { id: 7, name: "Acme", domain: "acme.com" } },
+      },
+      list: {
+        prospect: [{ id: 1, accountId: 7, firstName: "P1", lastName: "L1" }],
+        sequenceState: [],
+      },
+      count: { mailing: 5 },
+      failOn: {
+        // Opportunities scopeMissing — used to throw because the
+        // Promise.all was bare; now degrades into unavailableSections.
+        list: { opportunity: new OutreachApiException(scopeMissing("opportunities.read")) },
+      },
+    });
+    const raw = await getAccountProfile({ accountId: 7 });
+    const result = parseSuccess(raw) as unknown as {
+      account: { id: number };
+      prospects: { id: number }[];
+      opportunities: unknown[];
+      unavailableSections?: string[];
+    };
+    expect(result.account.id).toBe(7);
+    expect(result.prospects).toHaveLength(1);
+    expect(result.opportunities).toEqual([]);
+    expect(result.unavailableSections).toBeDefined();
+    expect(result.unavailableSections?.some((s) => s.includes("opportunities"))).toBe(true);
+
+    // Counts are still scoped — degradation didn't break the prospect scope.
+    const mailingCall = env.countCalls.find((c) => c.resource === "mailing");
+    expect(mailingCall?.filters?.["prospect"]).toEqual({ __relId: [1] });
+  });
+
+  it("getProspectProfile propagates non-domain errors (e.g. TypeError) instead of mislabelling them 'unavailable' (NEW-8)", async () => {
+    await installToolContext({
+      get: {
+        prospect: {
+          42: { id: 42, firstName: "Joe", lastName: "Fisher" },
+        },
+      },
+      list: {
+        sequenceState: [],
+        call: [],
+        task: [],
+        opportunity: [],
+      },
+      failOn: {
+        // Simulate a programmer bug, not a domain failure. Pre-NEW-8 the
+        // bare .catch() swallowed this and labelled the section
+        // "unavailable"; now it propagates to the tool's catch and becomes
+        // a generic outreachApiError envelope (status 0).
+        list: { mailing: new TypeError("undefined is not a function") },
+      },
+    });
+    const raw = await getProspectProfile({ prospectId: 42 });
+    const env = parseEnvelope(raw);
+    expect(env.error).toBe("outreachApiError");
+    const detail = env["detail"];
+    expect(typeof detail === "string" ? detail : "").toContain("undefined is not a function");
   });
 
   it("getProspectProfile composes a 360 view from parallel fetches", async () => {

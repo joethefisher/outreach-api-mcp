@@ -3,7 +3,7 @@
 import type { ListResult, OutreachClient } from "../api/client.js";
 import { range, relId, type FilterMap } from "../api/filters.js";
 
-import { daysAgoISO, profileUrl, runTool } from "./_helpers.js";
+import { daysAgoISO, optionalFetch, profileUrl, runTool } from "./_helpers.js";
 
 export interface GetAccountProfileInput {
   readonly accountId: number;
@@ -56,6 +56,17 @@ export async function getAccountProfile(input: GetAccountProfileInput): Promise<
 
     const labelled = schema.applyLabelsTo("account", { ...account });
 
+    // NEW-2: every optional section is wrapped via optionalFetch so a single
+    // sub-fetch failure (scopeMissing on prospects, a timeout on
+    // opportunities, a 5xx on the scope walk) does not collapse the whole
+    // tool. The core account.get above stays hard.
+    const unavailableSections: string[] = [];
+    const emptyPage = {
+      data: [] as readonly Record<string, unknown>[],
+      nextCursor: null,
+    };
+    const emptyScope = { ids: [] as readonly number[], truncated: false };
+
     // NEW-1: scope source is ALWAYS the dedicated paginated ID-only fetch,
     // independent of `includeProspects`. This guarantees the same counts
     // regardless of whether the caller asked for the rich prospect list, and
@@ -65,41 +76,56 @@ export async function getAccountProfile(input: GetAccountProfileInput): Promise<
     // fetched in parallel only when the caller asked for it.
     const [prospects, opportunities, scope] = await Promise.all([
       includeProspects
-        ? client.list("prospect", {
-            filters: { account: relId(id) },
-            fields: {
-              prospect: [
-                "firstName",
-                "lastName",
-                "title",
-                "engagedScore",
-                "engagedAt",
-                "stageName",
-              ],
-            },
-            pageSize: 50,
-            sort: "-engagedScore",
-          })
-        : Promise.resolve({ data: [] as readonly Record<string, unknown>[], nextCursor: null }),
+        ? optionalFetch(
+            client.list("prospect", {
+              filters: { account: relId(id) },
+              fields: {
+                prospect: [
+                  "firstName",
+                  "lastName",
+                  "title",
+                  "engagedScore",
+                  "engagedAt",
+                  "stageName",
+                ],
+              },
+              pageSize: 50,
+              sort: "-engagedScore",
+            }),
+            "prospects",
+            emptyPage,
+            unavailableSections,
+          )
+        : Promise.resolve(emptyPage),
       includeOpportunities
-        ? client.list("opportunity", {
-            filters: { account: relId(id) },
-            fields: {
-              opportunity: [
-                "name",
-                "amount",
-                "closeDate",
-                "state",
-                "forecastCategory",
-                "probability",
-              ],
-            },
-            pageSize: 50,
-          })
-        : Promise.resolve({ data: [] as readonly Record<string, unknown>[], nextCursor: null }),
+        ? optionalFetch(
+            client.list("opportunity", {
+              filters: { account: relId(id) },
+              fields: {
+                opportunity: [
+                  "name",
+                  "amount",
+                  "closeDate",
+                  "state",
+                  "forecastCategory",
+                  "probability",
+                ],
+              },
+              pageSize: 50,
+            }),
+            "opportunities",
+            emptyPage,
+            unavailableSections,
+          )
+        : Promise.resolve(emptyPage),
       includeRecentActivity
-        ? fetchAccountProspectIds(client, id)
-        : Promise.resolve({ ids: [] as readonly number[], truncated: false }),
+        ? optionalFetch(
+            fetchAccountProspectIds(client, id),
+            "scope (prospect IDs)",
+            emptyScope,
+            unavailableSections,
+          )
+        : Promise.resolve(emptyScope),
     ]);
 
     const prospectIds = scope.ids;
@@ -139,14 +165,19 @@ export async function getAccountProfile(input: GetAccountProfileInput): Promise<
 
     const activeCounts = new Map<number, number>();
     if (prospectIds.length > 0) {
-      const activeStates = await client.list<{ prospectId: number }>("sequenceState", {
-        filters: {
-          prospect: relId([...prospectIds]),
-          state: ["active", "paused", "pending"],
-        },
-        fields: { sequenceState: ["state"] },
-        pageSize: 500,
-      });
+      const activeStates = await optionalFetch(
+        client.list<{ prospectId: number }>("sequenceState", {
+          filters: {
+            prospect: relId([...prospectIds]),
+            state: ["active", "paused", "pending"],
+          },
+          fields: { sequenceState: ["state"] },
+          pageSize: 500,
+        }),
+        "activeSequenceCounts",
+        { data: [] as readonly { prospectId: number }[], nextCursor: null },
+        unavailableSections,
+      );
       for (const s of activeStates.data) {
         activeCounts.set(s.prospectId, (activeCounts.get(s.prospectId) ?? 0) + 1);
       }
@@ -218,6 +249,7 @@ export async function getAccountProfile(input: GetAccountProfileInput): Promise<
             "Some counts unavailable — Outreach API rejected the filter at this scope. Narrow the window or check the rep's permissions and retry.",
         }),
       },
+      ...(unavailableSections.length > 0 && { unavailableSections }),
     };
   });
 }

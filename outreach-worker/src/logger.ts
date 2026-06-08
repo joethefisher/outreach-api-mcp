@@ -69,17 +69,20 @@ function emit(level: LogLevel, msg: string, ctx: Readonly<Record<string, unknown
 // Sensitive keys redacted automatically. Covers OAuth credentials, bearer
 // tokens, PKCE artifacts, and personally-identifying Outreach fields. Adding
 // a new sensitive key is part of the PR that introduces it.
+//
+// SEC-02: bare generic names (`state`, `code`, `token`, `bearer`) were
+// previously here as defense-in-depth, but they over-redact normal Outreach
+// payloads — `sequenceState.state: "active"`, `country.code: "US"`, an audit
+// field named `token`. The value scrubbers below still catch the actual
+// secret shapes (Bearer headers, JWTs, OAuth/PKCE form fields), so we keep
+// only OAuth-specific keys here.
 const REDACT_KEYS: ReadonlySet<string> = new Set([
   "access_token",
   "refresh_token",
   "client_secret",
   "authorization",
   "Authorization",
-  "code",
   "code_verifier",
-  "state",
-  "token",
-  "bearer",
   "emails",
   "phoneNumbers",
   "bodyHtml",
@@ -92,11 +95,29 @@ const REDACT_KEYS: ReadonlySet<string> = new Set([
 // outreachApiError.detail), values in user-supplied filters that the agent
 // echoes back through noResults, and any other path where a token-shaped
 // string reaches a non-sensitive key.
+//
+// NEW-4: shape-based scrubbing cannot identify opaque random-string tokens
+// that don't match a recognized shape (e.g. a 16-char alphanumeric API key
+// with no `Bearer ` prefix and no JWT segments). Such values must be
+// redacted at the key level via REDACT_KEYS, or kept out of log payloads
+// entirely. The runTool wrapper redacts tool inputs by key on the way in.
+//
+// NEW-5: the form scrubber is split. OAuth-specific field names
+// (access_token, refresh_token, client_secret, code_verifier) are unique
+// enough to always scrub. The previously-broad bare names — `code`,
+// `state`, `token`, `bearer` — only fire when the surrounding string
+// carries an OAuth/PKCE/token-response marker (per RFC 6749 / RFC 7636).
+// That keeps "promo code=ABC123" and "track state=enabled" out of the
+// scrubber's path while still catching real OAuth bodies, which always
+// carry one of these markers.
+const OAUTH_CONTEXT_RE =
+  /(?:grant_type|client_id|redirect_uri|code_challenge|code_challenge_method|token_type|expires_in|error)=/i;
+const OAUTH_FORM_FIELD_ALWAYS_RE =
+  /(access_token|refresh_token|client_secret|code_verifier)=([^&\s"']+)/gi;
+const OAUTH_FORM_FIELD_CONTEXT_RE = /(code|state|token|bearer)=([^&\s"']+)/gi;
 const VALUE_SCRUBBERS: readonly RegExp[] = [
   // OAuth bearer header value.
   /Bearer\s+[A-Za-z0-9._\-+/=]+/g,
-  // Form-encoded OAuth/PKCE fields anywhere in a string.
-  /(access_token|refresh_token|client_secret|code_verifier|code|state|token|bearer)=([^&\s"']+)/gi,
   // JWT-shaped values (three base64url segments separated by `.`).
   /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g,
 ];
@@ -104,6 +125,8 @@ const VALUE_SCRUBBERS: readonly RegExp[] = [
 function scrubString(value: string): string {
   let out = value;
   for (const pattern of VALUE_SCRUBBERS) out = out.replace(pattern, "[REDACTED]");
+  out = out.replace(OAUTH_FORM_FIELD_ALWAYS_RE, "$1=[REDACTED]");
+  if (OAUTH_CONTEXT_RE.test(out)) out = out.replace(OAUTH_FORM_FIELD_CONTEXT_RE, "$1=[REDACTED]");
   return out;
 }
 
@@ -116,14 +139,24 @@ function redactValue(input: unknown, seen: WeakSet<object>): unknown {
   if (typeof input === "string") return scrubString(input);
   if (typeof input !== "object") return input;
   // SEC-06 circular-reference guard.
+  //
+  // NEW-6: track only nodes on the *current path* through the graph. A
+  // sibling reference to the same shared, acyclic object should be
+  // redacted normally, not collapsed to "[Circular]". We add on the way
+  // down and delete on the way back up so `seen` represents the active
+  // call stack, not every node we've ever visited.
   if (seen.has(input)) return "[Circular]";
   seen.add(input);
-  if (Array.isArray(input)) {
-    return input.map((entry: unknown) => redactValue(entry, seen));
+  try {
+    if (Array.isArray(input)) {
+      return input.map((entry: unknown) => redactValue(entry, seen));
+    }
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+      out[key] = REDACT_KEYS.has(key) ? "[REDACTED]" : redactValue(value, seen);
+    }
+    return out;
+  } finally {
+    seen.delete(input);
   }
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
-    out[key] = REDACT_KEYS.has(key) ? "[REDACTED]" : redactValue(value, seen);
-  }
-  return out;
 }

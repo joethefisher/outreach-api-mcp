@@ -5,7 +5,7 @@ import type { OutreachClient } from "../api/client.js";
 import { range, relId, type FilterMap } from "../api/filters.js";
 import { tooLarge } from "../errors/envelopes.js";
 
-import { daysAgoISO, profileUrl, runTool, todayISO } from "./_helpers.js";
+import { daysAgoISO, profileUrl, runTool, todayISO, validateDateRange } from "./_helpers.js";
 
 const MAX_PAGES = 50;
 const MAX_RECORDS = 50_000;
@@ -70,8 +70,10 @@ export async function analyzeSequencePerformance(
   input: AnalyzeSequencePerformanceInput,
 ): Promise<string> {
   return runTool("analyzeSequencePerformance", input, async ({ client }) => {
-    const from = input.dateRangeFrom ?? daysAgoISO(30);
-    const to = input.dateRangeTo ?? todayISO();
+    const dateValidation = validateDateRange(input.dateRangeFrom, input.dateRangeTo);
+    if (!dateValidation.ok) return dateValidation.envelope;
+    const from = dateValidation.range.from ?? daysAgoISO(30);
+    const to = dateValidation.range.to ?? todayISO();
     const seqId = input.sequenceId;
 
     const sequence = await client.get("sequence", seqId, {
