@@ -1,9 +1,13 @@
-import { promises as fs } from "node:fs";
+import { constants as fsConstants, promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { FileTokenCache, type TokenCacheData } from "../../../src/auth/tokenCache.js";
+import {
+  FileTokenCache,
+  TokenCachePermissionError,
+  type TokenCacheData,
+} from "../../../src/auth/tokenCache.js";
 
 let testDir: string;
 let cachePath: string;
@@ -73,6 +77,56 @@ describe("FileTokenCache.write", () => {
     await cache.write({ ...sampleData, refreshToken: "rt-rotated" });
     const out = await cache.read();
     expect(out?.refreshToken).toBe("rt-rotated");
+  });
+
+  it("does not leave a *.tmp file behind on a successful write (SEC-04)", async () => {
+    // Indirect proof that the temp file was opened (O_CREAT|O_EXCL) and
+    // then atomically renamed onto the final path. If the rename had
+    // been skipped or the temp open had returned an existing inode, a
+    // `cache.json.<hex>.tmp` would survive in the directory.
+    const cache = new FileTokenCache(cachePath);
+    await cache.write(sampleData);
+    const entries = await fs.readdir(join(testDir, "nested"));
+    const stray = entries.filter((e) => e.endsWith(".tmp"));
+    expect(stray).toEqual([]);
+  });
+
+  it("opens the verify handle with O_NOFOLLOW (Node primitive sanity check) (SEC-04)", async () => {
+    // Direct proof that the Node primitives the production code relies
+    // on behave as documented on this host: opening a symlink with
+    // O_RDONLY|O_NOFOLLOW must fail with ELOOP. If this ever stopped
+    // being true, the SEC-04 verify-open invariant would silently relax.
+    const target = join(testDir, "target");
+    const link = join(testDir, "link");
+    await fs.writeFile(target, "x", "utf8");
+    await fs.symlink(target, link);
+    await expect(fs.open(link, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW)).rejects.toThrow();
+  });
+
+  it("post-write fstat throws TokenCachePermissionError when mode bits diverge (SEC-03)", async () => {
+    // Simulate a filesystem that silently ignores chmod (some overlay /
+    // network mounts) by chmoding the file *back* to 0o644 after the
+    // production rename but before the verify fstat. Pre-fix this slipped
+    // through; post-fix the SEC-03 fstat catches it and throws.
+    class PostRenameLoosenedCache extends FileTokenCache {
+      override async write(data: TokenCacheData): Promise<void> {
+        const originalRename = fs.rename.bind(fs);
+        const renamingShim: typeof fs.rename = async (from, to) => {
+          await originalRename(from, to);
+          // Now that the file is at its final path, loosen it to simulate
+          // a filesystem that didn't honor the previous fchmod.
+          await fs.chmod(to, 0o644);
+        };
+        (fs as { rename: typeof renamingShim }).rename = renamingShim;
+        try {
+          await super.write(data);
+        } finally {
+          (fs as { rename: typeof originalRename }).rename = originalRename;
+        }
+      }
+    }
+    const cache = new PostRenameLoosenedCache(cachePath);
+    await expect(cache.write(sampleData)).rejects.toBeInstanceOf(TokenCachePermissionError);
   });
 
   it("rejects writes that would produce malformed data on round-trip", async () => {
