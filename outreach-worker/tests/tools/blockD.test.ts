@@ -51,6 +51,76 @@ describe("Block D — activity, tasks, audit", () => {
     expect(result.totalCount).toBe(1);
   });
 
+  it("getOpenTasks surfaces totalCount=null + totalCountUnknown=true on throttled count (COR-12)", async () => {
+    // Outreach signals an un-countable result as { count: -1, truncated: true }
+    // (after the COR-12 client.count fix translates the throttled response).
+    // The tool must NOT report this as a real "0" — it should be null with a
+    // clear unknown signal.
+    await installToolContext({
+      list: {
+        task: [
+          {
+            id: 1,
+            action: "call",
+            state: "incomplete",
+            dueAt: "2026-06-01T00:00:00Z",
+            prospectId: 42,
+          },
+        ],
+      },
+      count: { task: { count: -1, truncated: true } },
+    });
+    const raw = await getOpenTasks({});
+    const result = parseSuccess(raw) as unknown as {
+      tasks: { id: number }[];
+      totalCount: number | null;
+      totalCountUnknown: boolean;
+    };
+    expect(result.tasks).toHaveLength(1); // the page itself is fine
+    expect(result.totalCount).toBeNull();
+    expect(result.totalCountUnknown).toBe(true);
+  });
+
+  it("getTeamRoster paginates past the 500-user single-page cap (COR-07)", async () => {
+    // Seed 1200 users; pre-fix a single 500-pageSize read silently dropped
+    // 700 of them. Post-fix paginateList walks pages and returns all of
+    // them with truncated=false (well under the 5000 cap).
+    const users = Array.from({ length: 1200 }, (_, i) => ({
+      id: i + 1,
+      firstName: `User${String(i)}`,
+      lastName: "X",
+      email: `u${String(i)}@x.com`,
+    }));
+    await installToolContext({ list: { user: users } });
+    const raw = await getTeamRoster({});
+    const result = parseSuccess(raw) as unknown as {
+      users: { id: number }[];
+      truncated: boolean;
+    };
+    expect(result.users).toHaveLength(1200);
+    expect(result.truncated).toBe(false);
+  });
+
+  it("getTeamRoster signals truncated=true when the page cap is hit (COR-07)", async () => {
+    // Seed more users than the 10-page cap × 500-pageSize = 5000 ceiling.
+    const users = Array.from({ length: 6000 }, (_, i) => ({
+      id: i + 1,
+      firstName: `User${String(i)}`,
+      lastName: "X",
+      email: `u${String(i)}@x.com`,
+    }));
+    await installToolContext({ list: { user: users } });
+    const raw = await getTeamRoster({});
+    const result = parseSuccess(raw) as unknown as {
+      users: { id: number }[];
+      truncated: boolean;
+      note?: string;
+    };
+    expect(result.users.length).toBe(5000); // capped at 10 pages × 500
+    expect(result.truncated).toBe(true);
+    expect(result.note).toContain("larger than 5000");
+  });
+
   it("getTeamRoster sorts alphabetically and filters out locked users by default", async () => {
     await installToolContext({
       list: {

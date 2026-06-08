@@ -1,6 +1,6 @@
 // compareSequences — side-by-side performance for 2-5 sequences over the same window.
 
-import { isErrorEnvelope, tooManyInputs, validationError } from "../errors/envelopes.js";
+import { tooManyInputs, validationError } from "../errors/envelopes.js";
 
 import { runTool } from "./_helpers.js";
 import { analyzeSequencePerformance } from "./analyzeSequencePerformance.js";
@@ -18,6 +18,13 @@ interface SingleAnalysis {
   readonly rates?: Record<string, number>;
   readonly dateRange?: { readonly from: string; readonly to: string };
   readonly error?: string;
+  readonly message?: string;
+}
+
+interface WinnerOrNoData {
+  readonly sequenceIds: readonly number[];
+  readonly rate: number;
+  readonly tied: boolean;
 }
 
 export async function compareSequences(input: CompareSequencesInput): Promise<string> {
@@ -39,22 +46,43 @@ export async function compareSequences(input: CompareSequencesInput): Promise<st
     );
     const parsed: SingleAnalysis[] = results.map((r) => JSON.parse(r) as SingleAnalysis);
 
-    const firstError = parsed.find((p) => p.error !== undefined);
-    if (firstError !== undefined && isErrorEnvelope(firstError)) return firstError;
+    // COR-06: annotate failed sequences instead of aborting the whole
+    // comparison. A notFound / tooLarge on ONE id is information about
+    // that id — it doesn't invalidate the others' rates.
+    const sequences: {
+      sequenceId: number;
+      sequenceName: string | undefined;
+      sequenceProfileUrl: string | undefined;
+      totals: Record<string, number>;
+      rates: Record<string, number>;
+    }[] = [];
+    const failedSequences: { sequenceId: number; error: string; message?: string }[] = [];
 
-    const sequences = parsed.flatMap((p, i) => {
+    parsed.forEach((p, i) => {
       const sequenceId = ids[i];
-      if (sequenceId === undefined) return [];
-      return [
-        {
+      if (sequenceId === undefined) return;
+      if (p.error !== undefined) {
+        failedSequences.push({
           sequenceId,
-          sequenceName: p.sequenceName,
-          sequenceProfileUrl: p.sequenceProfileUrl,
-          totals: p.totals ?? {},
-          rates: p.rates ?? {},
-        },
-      ];
+          error: p.error,
+          ...(p.message !== undefined && { message: p.message }),
+        });
+        return;
+      }
+      sequences.push({
+        sequenceId,
+        sequenceName: p.sequenceName,
+        sequenceProfileUrl: p.sequenceProfileUrl,
+        totals: p.totals ?? {},
+        rates: p.rates ?? {},
+      });
     });
+
+    // If literally nothing succeeded, surface the first error envelope —
+    // there's nothing to compare. Otherwise continue with what we have.
+    if (sequences.length === 0) {
+      return parsed[0] ?? validationError("All sequences failed to analyze.");
+    }
 
     const winners = {
       bestOpenRate: pickWinner(sequences, "openRate"),
@@ -63,21 +91,34 @@ export async function compareSequences(input: CompareSequencesInput): Promise<st
     };
 
     return {
-      dateRange: parsed[0]?.dateRange,
+      dateRange: parsed.find((p) => p.dateRange !== undefined)?.dateRange,
       sequences,
       winners,
+      ...(failedSequences.length > 0 && { failedSequences }),
     };
   });
 }
 
+// COR-06: when the best rate is 0 across all sequences, there's no
+// meaningful winner — return null rather than picking the first id as
+// a fake "winner at rate: 0". When multiple sequences tie at the best
+// rate, surface all of them with `tied: true`.
 function pickWinner(
   sequences: readonly { sequenceId: number; rates: Record<string, number> }[],
   metric: string,
-): { sequenceId: number; rate: number } | null {
-  let best: { sequenceId: number; rate: number } | null = null;
+): WinnerOrNoData | null {
+  let bestRate = 0;
+  const winnerIds: number[] = [];
   for (const s of sequences) {
     const r = s.rates[metric] ?? 0;
-    if (best === null || r > best.rate) best = { sequenceId: s.sequenceId, rate: r };
+    if (r > bestRate) {
+      bestRate = r;
+      winnerIds.length = 0;
+      winnerIds.push(s.sequenceId);
+    } else if (r === bestRate && r > 0) {
+      winnerIds.push(s.sequenceId);
+    }
   }
-  return best;
+  if (winnerIds.length === 0 || bestRate === 0) return null;
+  return { sequenceIds: winnerIds, rate: bestRate, tied: winnerIds.length > 1 };
 }

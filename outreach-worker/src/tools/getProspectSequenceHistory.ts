@@ -44,10 +44,15 @@ export async function getProspectSequenceHistory(
         const ended =
           stateName !== undefined && TERMINAL_STATES.test(stateName) ? s["stateChangedAt"] : null;
         const endedMs = typeof ended === "string" ? new Date(ended).getTime() : null;
-        const durationDays =
+        // COR-10: clock skew or imported records can yield `stateChangedAt`
+        // *before* `createdAt`. Report `null` in that case rather than a
+        // negative number — the duration is genuinely unknown if the
+        // timestamps are inconsistent.
+        const rawDuration =
           enrolled !== null && endedMs !== null
             ? Math.round((endedMs - enrolled) / (1000 * 60 * 60 * 24))
             : null;
+        const durationDays = rawDuration !== null && rawDuration < 0 ? null : rawDuration;
         const sequenceId = s["sequenceId"];
         return {
           sequenceStateId: s["id"],

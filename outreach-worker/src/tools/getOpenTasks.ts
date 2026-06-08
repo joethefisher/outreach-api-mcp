@@ -82,7 +82,11 @@ export async function getOpenTasks(input: GetOpenTasksInput): Promise<string> {
             typeof prospectId === "number" ? profileUrl("prospect", prospectId) : undefined,
         };
       }),
-      totalCount: totalCount.count,
+      // COR-12: `client.count` returns -1 when the API refused to count
+      // (e.g. throttled). Surface that as `null` to the agent rather than
+      // a misleading "0", and reflect it in `totalCountUnknown`.
+      totalCount: totalCount.count >= 0 ? totalCount.count : null,
+      totalCountUnknown: totalCount.count < 0,
       truncated: tasks.nextCursor !== null,
     };
   });

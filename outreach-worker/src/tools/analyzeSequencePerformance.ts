@@ -1,7 +1,7 @@
 // analyzeSequencePerformance — aggregated open/click/reply/bounce/optout/completion
 // rates over a date range, optionally grouped (day, week, step).
 
-import type { OutreachClient } from "../api/client.js";
+import { OutreachApiException, type OutreachClient } from "../api/client.js";
 import { range, relId, type FilterMap } from "../api/filters.js";
 import { tooLarge } from "../errors/envelopes.js";
 
@@ -86,8 +86,16 @@ export async function analyzeSequencePerformance(
         sequence: relId(seqId),
         createdAt: range(`${from}T00:00:00Z`, `${to}T23:59:59Z`),
       });
-    } catch {
-      return tooLarge(-1, true);
+    } catch (e) {
+      // COR-09: discriminate domain failures from programmer mistakes.
+      // Outreach API errors mean "can't count, narrow scope" → tooLarge.
+      // A TypeError / RangeError / fixture-wiring bug must propagate so
+      // it surfaces as a real failure rather than being silently
+      // mislabelled "result too large." Mirrors getRecentMailings.ts.
+      if (e instanceof OutreachApiException && e.envelope.error === "outreachApiError") {
+        return tooLarge(-1, true);
+      }
+      throw e;
     }
     if (mailingCount.count > MAX_RECORDS || mailingCount.truncated) {
       return tooLarge(mailingCount.count, mailingCount.truncated);

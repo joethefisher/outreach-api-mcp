@@ -308,6 +308,29 @@ describe("LiveOutreachClient.count", () => {
     const result = await client.count("prospect");
     expect(result.truncated).toBe(true);
   });
+
+  it("returns count=-1 when Outreach throttles the count (COR-12)", async () => {
+    // Outreach signals "couldn't count" as { count: 0, count_truncated: true }.
+    // A caller that reads `count` without checking `truncated` first would see
+    // a real "0" for what's actually unknown. The fix is to return -1 (the
+    // sentinel `safeCount` already uses) when truncated AND count is 0.
+    const { client } = makeClient({
+      responses: [jsonResponse(200, { data: [], meta: { count: 0, count_truncated: true } })],
+    });
+    const result = await client.count("prospect");
+    expect(result.count).toBe(-1);
+    expect(result.truncated).toBe(true);
+  });
+
+  it("preserves count=0 when the count is genuinely zero (COR-12)", async () => {
+    // count_truncated=false with count=0 is a real zero — must NOT become -1.
+    const { client } = makeClient({
+      responses: [jsonResponse(200, { data: [], meta: { count: 0, count_truncated: false } })],
+    });
+    const result = await client.count("prospect");
+    expect(result.count).toBe(0);
+    expect(result.truncated).toBe(false);
+  });
 });
 
 describe("LiveOutreachClient.listUsers", () => {

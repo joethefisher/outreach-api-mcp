@@ -49,6 +49,11 @@ export async function searchSnippets(input: SearchSnippetsInput): Promise<string
           : limit,
     });
 
+    // COR-05: the wide-fallback + bodyContains client-side filter paths
+    // rebuild the result with nextCursor=null, masking truncation. Track
+    // explicitly so we can flag it to the agent.
+    let fallbackTruncated = false;
+
     if (
       result.data.length === 0 &&
       input.query !== null &&
@@ -67,6 +72,7 @@ export async function searchSnippets(input: SearchSnippetsInput): Promise<string
       const filtered = wide.data.filter((s) =>
         ((s["name"] as string | undefined) ?? "").toLowerCase().includes(q),
       );
+      fallbackTruncated = filtered.length > limit;
       result = { data: filtered, nextCursor: null };
     }
 
@@ -84,6 +90,7 @@ export async function searchSnippets(input: SearchSnippetsInput): Promise<string
           .includes(needle),
       );
     }
+    if (rows.length > limit) fallbackTruncated = true;
     rows = rows.slice(0, limit);
 
     if (rows.length === 0) {
@@ -104,7 +111,7 @@ export async function searchSnippets(input: SearchSnippetsInput): Promise<string
         profileUrl: profileUrl("snippet", s["id"] as number),
         updatedAt: s["updatedAt"],
       })),
-      truncated: result.nextCursor !== null,
+      truncated: fallbackTruncated || result.nextCursor !== null,
     };
   });
 }
