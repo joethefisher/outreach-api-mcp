@@ -50,7 +50,7 @@ interface ToolConfig<TArgs extends ZodRawShape> {
 class WorkerCompat {
   private readonly server = new McpServer({
     name: "outreach-api-mcp",
-    version: "0.1.1",
+    version: "0.1.2",
   });
 
   tool<TArgs extends ZodRawShape>(name: string, config: ToolConfig<TArgs>): void {
