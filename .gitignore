@@ -14,3 +14,10 @@ npm-debug.log*
 
 .token-cache/
 *.token
+
+# prepack copies the canonical README + LICENSE into outreach-worker/ at
+# pack time and postpack removes them. Ignore so a failed prepack doesn't
+# leave the worktree dirty.
+outreach-worker/README.md
+outreach-worker/LICENSE
+outreach-worker/*.tgz

@@ -2,6 +2,26 @@
   "name": "outreach-api-mcp",
   "version": "0.1.2",
   "description": "Independent MCP server for the Outreach v2 REST API — prospects, accounts, sequences, templates, snippets, tasks, mailings, audit logs.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "outreach",
+    "outreach.io",
+    "claude",
+    "anthropic",
+    "sales",
+    "crm"
+  ],
+  "homepage": "https://github.com/joethefisher/outreach-api-mcp",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/joethefisher/outreach-api-mcp.git",
+    "directory": "outreach-worker"
+  },
+  "bugs": {
+    "url": "https://github.com/joethefisher/outreach-api-mcp/issues"
+  },
+  "license": "Apache-2.0",
   "type": "module",
   "main": "dist/index.js",
   "files": [
@@ -27,7 +47,8 @@
     "verify": "npm run check && npm run lint && npm run format:check && npm run test && npm run build",
     "bootstrap:oauth": "tsx --env-file=../.env scripts/bootstrap-oauth.ts",
     "smoke:live": "tsx --env-file=../.env scripts/smoke-live.ts",
-    "prepack": "npm run build"
+    "prepack": "cp ../README.md ./README.md && cp ../LICENSE ./LICENSE && npm run build",
+    "postpack": "rm -f README.md LICENSE"
   },
   "engines": {
     "node": ">=20.11"
