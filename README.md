@@ -34,15 +34,31 @@ The steps:
 
 A couple of gotchas. If the API Access page is hidden in your UI, an admin needs to grant you "Manage API Integrations" first. And the redirect URI has to match exactly, down to scheme, host, and port. `http://127.0.0.1` (not `localhost`) is the right value; Outreach accepts it as loopback per [RFC 8252](https://datatracker.ietf.org/doc/html/rfc8252).
 
-## Quick start
+## Install
+
+Two paths. Pick whichever feels more natural.
+
+**From a tagged release tarball** (no clone required; treats this like a normal npm dependency):
+
+```bash
+npm install -g https://github.com/joethefisher/outreach-api-mcp/releases/download/v0.1.2/outreach-api-mcp-0.1.2.tgz
+```
+
+That gives you the `outreach-api-mcp` binary on your PATH plus the bundled `dist/`. Skip ahead to the [bootstrap](#bootstrap) section.
+
+**From source** (if you want to read the code, contribute, or run on an unreleased commit):
 
 ```bash
 git clone https://github.com/joethefisher/outreach-api-mcp.git
 cd outreach-api-mcp/outreach-worker
 npm ci
 npm run build
+```
 
-# Put your app credentials in ../.env first.
+## Bootstrap
+
+```bash
+# Put your app credentials in ../.env first (the bootstrap script reads it).
 cp ../.env.example ../.env  # then edit OUTREACH_CLIENT_ID / SECRET
 
 # One-time browser consent flow. Captures the refresh token.
