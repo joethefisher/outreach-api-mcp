@@ -6,7 +6,7 @@ Independent integration. Not affiliated with, endorsed by, or sponsored by Outre
 
 ## Status
 
-v0.1. The MCP server is in `outreach-worker/` and runs over stdio. It is read-only by design: no POST, PATCH, or DELETE, and no write scopes get requested. CI runs on Node 20 and Node 22.
+v0.1.2. The MCP server is in `outreach-worker/` and runs over stdio. Read-only by design: no POST, PATCH, or DELETE, and no write scopes get requested. CI runs on Node 20 and Node 22 against 290 unit and integration tests. Three review passes have landed: the initial scaffold review, the v0.1.1 blocker-fix verification, and the v0.1.2 fast-follows (correctness, security hardening, test coverage, and design cleanup — see commit history on `main` for the per-finding trail).
 
 ## Prerequisites
 
@@ -53,7 +53,9 @@ What `bootstrap:oauth` does, in order: opens your browser, walks you through the
 
 ### Wiring into an MCP client
 
-Once `.env` has all three credentials, point your MCP client at the built server. For Claude Desktop, edit `claude_desktop_config.json`:
+Once you have all three credentials, point your MCP client at the built server. The bootstrap step is only needed once; from this point on the credentials live in your MCP client's config and the on-disk token cache.
+
+For Claude Desktop, find `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`; Windows: `%APPDATA%\Claude\claude_desktop_config.json`) and add an entry:
 
 ```json
 {
@@ -71,7 +73,9 @@ Once `.env` has all three credentials, point your MCP client at the built server
 }
 ```
 
-Restart the MCP client. The 21 tools below will show up. The server reads its configuration from the env you provide.
+Fully quit and reopen Claude Desktop (a window reload is not enough — the MCP transport only restarts on app launch). The 21 tools below will show up in the tool picker. The server reads its configuration from the env you provide in this config block, not from any `.env` file on disk.
+
+For other MCP clients, the contract is the same: spawn `node dist/index.js` as a subprocess with the three env vars set, and talk to it over stdio.
 
 ## Configuration
 
