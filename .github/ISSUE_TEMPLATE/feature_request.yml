@@ -1,0 +1,30 @@
+name: Feature request
+description: Suggest a new tool, option, or capability.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem you're trying to solve
+      description: What can't you do today that you wish you could?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How should it work? New tool? New input on an existing tool?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+  - type: checkboxes
+    id: contract
+    attributes:
+      label: Read-only contract
+      description: The project is strictly read-only by design (see SECURITY.md). Any new tool must respect that.
+      options:
+        - label: I understand the proposal does not require write access to Outreach.
+          required: true
