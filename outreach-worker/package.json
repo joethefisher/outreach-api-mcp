@@ -61,7 +61,7 @@
     "@types/node": "22.19.19",
     "@typescript-eslint/eslint-plugin": "8.60.0",
     "@typescript-eslint/parser": "8.60.0",
-    "@vitest/coverage-v8": "4.1.7",
+    "@vitest/coverage-v8": "4.1.8",
     "eslint": "9.39.4",
     "eslint-plugin-import": "2.32.0",
     "eslint-plugin-security": "3.0.1",
@@ -69,6 +69,6 @@
     "tsx": "4.22.4",
     "typescript": "5.9.3",
     "typescript-eslint": "8.60.0",
-    "vitest": "4.1.7"
+    "vitest": "4.1.8"
   }
 }
