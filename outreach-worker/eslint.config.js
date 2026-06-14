@@ -1,7 +1,7 @@
 // ESLint flat config — type-checked + strict + security + import discipline.
 // The standards this enforces are documented in /STANDARDS.md.
 
-import importPlugin from "eslint-plugin-import";
+import importX from "eslint-plugin-import-x";
 import security from "eslint-plugin-security";
 import tseslint from "typescript-eslint";
 
@@ -21,7 +21,7 @@ export default tseslint.config(
       },
     },
     plugins: {
-      import: importPlugin,
+      "import-x": importX,
       security,
     },
     rules: {
@@ -57,12 +57,15 @@ export default tseslint.config(
       "security/detect-bidi-characters": "error",
 
       // ─── No default exports — named only ─────────────────────────────────────
-      "import/no-default-export": "error",
-      "import/no-cycle": ["error", { maxDepth: 10 }],
+      // Rules migrated from eslint-plugin-import (capped at ESLint 9) to
+      // eslint-plugin-import-x (supports 8/9/10). Same rule semantics; the
+      // prefix is the only material change.
+      "import-x/no-default-export": "error",
+      "import-x/no-cycle": ["error", { maxDepth: 10 }],
       // Split parent/sibling/index into separate ordered groups so the
       // `.` vs `/` collation that varies across ICU/Node versions does not
       // affect import order (NEW-7). Within each group, alphabetize.
-      "import/order": [
+      "import-x/order": [
         "error",
         {
           groups: [["builtin", "external"], "internal", "parent", "sibling", "index"],
@@ -82,7 +85,7 @@ export default tseslint.config(
     files: ["scripts/**/*.ts", "tests/**/*.ts", "vitest.config.ts"],
     rules: {
       "no-console": "off",
-      "import/no-default-export": "off",
+      "import-x/no-default-export": "off",
       "@typescript-eslint/no-non-null-assertion": "off",
     },
   },
