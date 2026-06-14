@@ -12,7 +12,7 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z, type ZodRawShape, type ZodTypeAny } from "zod";
+import { z, type ZodRawShape, type ZodType } from "zod";
 
 import { loadRuntimeConfig } from "./config/index.js";
 import { configureLogger, logger } from "./logger.js";
@@ -104,7 +104,7 @@ const j = {
   string: () => z.string(),
   number: () => z.number(),
   boolean: () => z.boolean(),
-  array: <T extends ZodTypeAny>(t: T) => z.array(t),
+  array: <T extends ZodType>(t: T) => z.array(t),
   object: <TArgs extends ZodRawShape>(shape: TArgs): TArgs => shape,
 };
 
