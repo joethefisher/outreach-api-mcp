@@ -58,7 +58,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@types/node": "25.9.2",
+    "@types/node": "26.0.1",
     "@typescript-eslint/eslint-plugin": "8.60.1",
     "@typescript-eslint/parser": "8.60.1",
     "@vitest/coverage-v8": "4.1.8",
